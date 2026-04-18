@@ -48,7 +48,7 @@ def countdown_warning(action_name):
 
 @app.route('/ping', methods=['GET'])
 def ping():
-    return jsonify({"status": "connected", "version": "2.9.0", "secure": SECURITY_TOKEN is not None})
+    return jsonify({"status": "connected", "version": "2.9.5", "secure": SECURITY_TOKEN is not None})
 
 @app.route('/execute', methods=['POST'])
 def execute():
@@ -144,7 +144,7 @@ def execute():
         return jsonify({"status": "error", "msg": str(e)}), 500
 
 if __name__ == '__main__':
-    print("--- JARVIS Automation Runner v2.9.0 ---")
+    print("--- JARVIS Automation Runner v2.9.5 ---")
     if SECURITY_TOKEN:
         print("[SECURE MODE] Local runner locked with Access Token.")
     else:
