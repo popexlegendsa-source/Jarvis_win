@@ -1,5 +1,15 @@
 # Changelog - JARVIS Agent
 
+## [2.6.2] - 2026-04-18
+### Fixed
+- Fixed `ReferenceError: localApiKey is not defined` caused by renaming variables during the multi-model update.
+- Corrected status indicator logic to properly reflect API key presence across all providers.
+
+## [2.6.1] - 2026-04-18
+### Fixed
+- Added Git detection in `run_local.bat` to help users with missing Git command.
+- Documentation update for Git installation.
+
 ## [2.6.0] - 2026-04-18
 ### Added
 - **Application Renaming**: Project officially rebranded as **JARVIS** v2.6.

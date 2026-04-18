@@ -212,18 +212,21 @@ export default function App() {
 
   const ai = useMemo(() => {
     try {
-      const key = localApiKey || getEnvironmentApiKey();
+      const key = geminiKey || getEnvironmentApiKey();
       if (!key) return null;
       return new GoogleGenAI({ apiKey: key });
     } catch (e) {
       console.error("Failed to initialize Gemini AI:", e);
       return null;
     }
-  }, [localApiKey]);
+  }, [geminiKey]);
 
   const hasApiKey = useMemo(() => {
-    return !!(localApiKey || getEnvironmentApiKey());
-  }, [localApiKey]);
+    if (provider === 'gemini') return !!(geminiKey || getEnvironmentApiKey());
+    if (provider === 'openai') return !!openaiKey;
+    if (provider === 'anthropic') return !!anthropicKey;
+    return false;
+  }, [provider, geminiKey, openaiKey, anthropicKey]);
 
   useEffect(() => {
     localStorage.setItem('WIN_AGENT_HISTORY', JSON.stringify(history));

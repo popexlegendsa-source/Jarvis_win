@@ -23,6 +23,14 @@ if %errorlevel% neq 0 (
     exit
 )
 
+:: 1.5 Проверка Git (для авто-обновлений)
+git --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [WARNING] Git is not installed. Auto-updates with "git pull" will not work.
+    echo Please install it from https://git-scm.com/ to keep JARVIS updated.
+    echo.
+)
+
 :: 2. Установка Node зависимостей
 if not exist node_modules (
     echo [2/4] First time setup: Installing UI dependencies...
