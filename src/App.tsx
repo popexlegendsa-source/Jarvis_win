@@ -13,7 +13,11 @@ import {
   Monitor,
   Brain,
   User,
-  Trash2
+  Trash2,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { CommandResponse, HistoryItem, UserMemory } from './types';
 
@@ -58,7 +62,65 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState<'api' | 'memory'>('api');
   const [localApiKey, setLocalApiKey] = useState(localStorage.getItem('WIN_AGENT_KEY') || '');
   const [selectedModel, setSelectedModel] = useState(localStorage.getItem('WIN_AGENT_MODEL') || 'gemini-3.1-flash-lite-preview');
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(localStorage.getItem('WIN_AGENT_VOICE') === 'true');
+  const [isListening, setIsListening] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
+
+  // Initialize Speech Recognition
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = false;
+      recognitionRef.current.interimResults = false;
+      recognitionRef.current.lang = 'ru-RU'; // Default to Russian as per user conversation
+
+      recognitionRef.current.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInput(transcript);
+        setIsListening(false);
+        // Auto-submit after voice input
+        setTimeout(() => {
+          const submitBtn = document.getElementById('submit-prompt');
+          submitBtn?.click();
+        }, 500);
+      };
+
+      recognitionRef.current.onerror = () => setIsListening(false);
+      recognitionRef.current.onend = () => setIsListening(false);
+    }
+  }, []);
+
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      alert("Ваш браузер не поддерживает голосовое управление. Пожалуйста, используйте Google Chrome или обновите текущий браузер.");
+      return;
+    }
+
+    if (isListening) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
+    } else {
+      try {
+        setIsListening(true);
+        recognitionRef.current.start();
+      } catch (e) {
+        console.error("Speech recognition start error:", e);
+        setIsListening(false);
+        alert("Не удалось включить микрофон. Убедитесь, что вы дали разрешение в браузере.");
+      }
+    }
+  };
+
+  const speak = (text: string) => {
+    if (!isVoiceEnabled) return;
+    window.speechSynthesis.cancel(); // Stop current speech
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ru-RU';
+    window.speechSynthesis.speak(utterance);
+  };
   
   // Safe detection for API Key in various environments (Vite/Node/Manual)
   const getEnvironmentApiKey = () => {
@@ -96,6 +158,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('WIN_AGENT_MEMORY', JSON.stringify(memory));
   }, [memory]);
+
+  useEffect(() => {
+    localStorage.setItem('WIN_AGENT_VOICE', String(isVoiceEnabled));
+  }, [isVoiceEnabled]);
 
   const saveKey = (e: FormEvent) => {
     e.preventDefault();
@@ -194,6 +260,11 @@ export default function App() {
       };
 
       setHistory(prev => [...prev, modelMsg]);
+      
+      // Voice feedback
+      if (parsed.message) {
+        speak(parsed.message);
+      }
     } catch (error: any) {
       console.error('WinAutomate API Error:', error);
       
@@ -363,12 +434,19 @@ export default function App() {
           </div>
 
           <div className="bg-sleek-card border border-sleek-border rounded-xl p-4">
-            <span className="text-[11px] uppercase text-sleek-dim tracking-wider mb-2 block font-semibold">AI Assistant</span>
+            <span className="text-[11px] uppercase text-sleek-dim tracking-wider mb-2 block font-semibold flex justify-between items-center">
+              Voice Mode
+              <button 
+                onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
+                className={`w-8 h-4 rounded-full transition-all relative ${isVoiceEnabled ? 'bg-win-blue' : 'bg-sleek-border'}`}
+              >
+                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${isVoiceEnabled ? 'left-4.5' : 'left-0.5'}`} />
+              </button>
+            </span>
             <div className="text-sm flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${hasApiKey ? 'bg-win-blue shadow-[0_0_8px_rgba(0,120,212,0.5)]' : 'bg-red-500 animate-pulse'}`} />
-              {hasApiKey ? 'Ready (API Active)' : 'Action Required'}
+              {isVoiceEnabled ? <Volume2 className="w-4 h-4 text-win-blue" /> : <VolumeX className="w-4 h-4 text-sleek-dim" />}
+              {isVoiceEnabled ? 'Audio Feedback ON' : 'Audio Feedback OFF'}
             </div>
-            {!hasApiKey && <p className="text-[10px] text-red-400 mt-2 italic">No API Key detected</p>}
           </div>
         </div>
 
@@ -485,6 +563,14 @@ export default function App() {
             />
             <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-3">
               <button 
+                type="button"
+                onClick={toggleListening}
+                className={`p-2 transition-all rounded-full ${isListening ? 'bg-red-500/20 text-red-500 animate-pulse' : 'text-sleek-dim hover:text-win-blue hover:bg-win-blue/10'}`}
+              >
+                {isListening ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+              </button>
+              <button 
+                id="submit-prompt"
                 type="submit"
                 disabled={!input.trim() || loading}
                 className="p-2 text-sleek-blue hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-colors"

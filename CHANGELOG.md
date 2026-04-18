@@ -1,5 +1,18 @@
 # Changelog - WinAutomate Agent
 
+## [2.4.4] - 2026-04-18
+### Fixed
+- Improved Speech Recognition stability and error handling.
+- Added browser support validation for voice commands.
+- Enhanced UI feedback when microphone access is denied.
+
+## [2.4.3] - 2026-04-18
+### Added
+- **Voice Input (STT)**: Integrated Web Speech API for hands-free commanding. Added microphone button in input area.
+- **Voice Response (TTS)**: The agent can now speak back to you using system voices.
+- **Controls**: Added a Voice Mode toggle in the sidebar to enable/disable audio feedback.
+- **Auto-Submit**: Voice input automatically triggers a request after a short pause.
+
 ## [2.4.2] - 2026-04-18
 ### Added
 - Created a comprehensive `README.md` to ensure proper GitHub repository synchronization.
