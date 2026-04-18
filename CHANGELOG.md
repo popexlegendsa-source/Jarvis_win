@@ -1,5 +1,10 @@
 # Changelog - JARVIS Agent
 
+## [2.9.2] - 2026-04-18
+### Added
+- **Multi-Model Dynamic Fallback**: Rewrote the AI generation loop for Gemini. If the main chosen model (e.g., `gemini-3.1-flash-lite-preview`) hits the free tier rate limit (`429 Quota Exceeded`), JARVIS will automatically and silently intercept the error and seamlessly fallback to other available models (like `gemini-2.5-flash-8b`, `gemini-2.5-flash`, etc.) in a cascade. This practically overrides individual model API quotas.
+- **Enhanced Model Roster**: Added the newest high-throughput experimental models to the AI Settings dropdown, including `2.5 Flash-8B` which has the highest native API limits.
+
 ## [2.9.1] - 2026-04-18
 ### Changed
 - **Private Git Workflow**: Re-wrote the local startup script's git pull logic. `run_local.bat` will now strictly attach to the user's private GitHub repository (`https://github.com/popexlegendsa-source/Jarvis_win.git`) and auto-pull the `main` branch. This natively triggers the Windows Git Credential Manager for secure authentication.

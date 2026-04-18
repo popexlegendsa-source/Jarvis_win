@@ -331,12 +331,37 @@ export default function App() {
           parts: [{ text: item.content }]
         }));
 
-        const result = await ai.models.generateContent({
-          model: selectedModel,
-          contents: [...conversationContext, { role: 'user', parts: [{ text: userQuery }] }],
-          config: { systemInstruction: SYSTEM_PROMPT(memory), responseMimeType: "application/json" },
-        });
-        responseText = result.text || "";
+        const fallbacks = [selectedModel, "gemini-2.5-flash-8b", "gemini-2.5-flash", "gemini-3.1-flash-lite-preview", "gemini-2.5-pro"];
+        const uniqueFallbacks = [...new Set(fallbacks)];
+
+        let success = false;
+        let lastError = null;
+
+        for (const modelToTry of uniqueFallbacks) {
+          try {
+            console.log(`[Gemini] Attempting to use model: ${modelToTry}`);
+            const result = await ai.models.generateContent({
+              model: modelToTry,
+              contents: [...conversationContext, { role: 'user', parts: [{ text: userQuery }] }],
+              config: { systemInstruction: SYSTEM_PROMPT(memory), responseMimeType: "application/json" },
+            });
+            responseText = result.text || "";
+            success = true;
+            break; 
+          } catch (err: any) {
+            lastError = err;
+            if (err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED') || err?.status === 429) {
+              console.warn(`[Gemini] Model ${modelToTry} quota exceeded, falling back to next model...`);
+              continue;
+            } else {
+              throw err; 
+            }
+          }
+        }
+        
+        if (!success && lastError) {
+          throw lastError;
+        }
       } 
       else if (provider === 'openai') {
         const client = new OpenAI({ apiKey: openaiKey, dangerouslyAllowBrowser: true });
@@ -547,9 +572,10 @@ export default function App() {
                         >
                           {provider === 'gemini' && (
                             <>
-                              <option value="gemini-3.1-flash-lite-preview">1.5 Flash-Lite (Fastest)</option>
-                              <option value="gemini-3-flash-preview">1.5 Flash (Balanced)</option>
-                              <option value="gemini-3-pro-preview">1.5 Pro (Precision)</option>
+                              <option value="gemini-3.1-flash-lite-preview">3.1 Flash-Lite (Insanely Fast)</option>
+                              <option value="gemini-2.5-flash-8b">2.5 Flash-8B (Highest Limit)</option>
+                              <option value="gemini-2.5-flash">2.5 Flash (Balanced Default)</option>
+                              <option value="gemini-2.5-pro">2.5 Pro (Precision & Logic)</option>
                             </>
                           )}
                           {provider === 'openai' && (
