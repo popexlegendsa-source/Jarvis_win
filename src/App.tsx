@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, FormEvent, useMemo } from 'react';
 import { GoogleGenAI } from "@google/genai";
+import { OpenAI } from "openai";
+import { Anthropic } from "@anthropic-ai/sdk";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Terminal, 
@@ -21,8 +23,8 @@ import {
 } from 'lucide-react';
 import { CommandResponse, HistoryItem, UserMemory } from './types';
 
-const SYSTEM_PROMPT = (memory: UserMemory) => `You are WinAutomate Agent v2.4, a conversational expert in Windows automation.
-Your goal is to help users manage their PC through natural dialogue.
+const SYSTEM_PROMPT = (memory: UserMemory) => `You are JARVIS, a highly sophisticated AI assistant for Windows automation, inspired by Tony Stark's personal OS.
+Your goal is to help users manage their PC through natural dialogue with a professional, sharp, and helpful tone.
 
 Current User Profile/Memory:
 ${JSON.stringify(memory, null, 2)}
@@ -60,7 +62,13 @@ export default function App() {
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'api' | 'memory'>('api');
-  const [localApiKey, setLocalApiKey] = useState(localStorage.getItem('WIN_AGENT_KEY') || '');
+  
+  // Multi-Provider Keys
+  const [provider, setProvider] = useState<'gemini' | 'openai' | 'anthropic'>(localStorage.getItem('WIN_AGENT_PROVIDER') as any || 'gemini');
+  const [geminiKey, setGeminiKey] = useState(localStorage.getItem('WIN_AGENT_KEY') || '');
+  const [openaiKey, setOpenaiKey] = useState(localStorage.getItem('WIN_AGENT_OPENAI_KEY') || '');
+  const [anthropicKey, setAnthropicKey] = useState(localStorage.getItem('WIN_AGENT_ANTHROPIC_KEY') || '');
+
   const [selectedModel, setSelectedModel] = useState(localStorage.getItem('WIN_AGENT_MODEL') || 'gemini-3.1-flash-lite-preview');
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(localStorage.getItem('WIN_AGENT_VOICE') === 'true');
   const [isAIVoiceEnabled, setIsAIVoiceEnabled] = useState(localStorage.getItem('WIN_AGENT_AI_VOICE') === 'true');
@@ -234,10 +242,13 @@ export default function App() {
 
   const saveKey = (e: FormEvent) => {
     e.preventDefault();
-    localStorage.setItem('WIN_AGENT_KEY', localApiKey);
+    localStorage.setItem('WIN_AGENT_PROVIDER', provider);
+    localStorage.setItem('WIN_AGENT_KEY', geminiKey);
+    localStorage.setItem('WIN_AGENT_OPENAI_KEY', openaiKey);
+    localStorage.setItem('WIN_AGENT_ANTHROPIC_KEY', anthropicKey);
     localStorage.setItem('WIN_AGENT_MODEL', selectedModel);
     setIsSettingsOpen(false);
-    window.location.reload(); // Refresh to re-init AI
+    window.location.reload();
   };
 
   const clearAllData = () => {
@@ -275,29 +286,52 @@ export default function App() {
     setLoading(true);
 
     try {
-      // Build conversation context from the last 10 messages
-      const conversationContext = history.slice(-10).map(item => ({
-        role: item.role,
-        parts: [{ text: item.content }]
-      }));
-
-      const result = await ai.models.generateContent({
-        model: selectedModel,
-        contents: [
-          ...conversationContext,
-          { role: 'user', parts: [{ text: userQuery }] }
-        ],
-        config: {
-          systemInstruction: SYSTEM_PROMPT(memory),
-          responseMimeType: "application/json",
-        },
-      });
-
-      if (!result.text) {
-        throw new Error("Empty response from AI service");
+      const activeKey = provider === 'gemini' ? (geminiKey || getEnvironmentApiKey()) : (provider === 'openai' ? openaiKey : anthropicKey);
+      
+      if (!activeKey) {
+        throw new Error(`Missing API Key for ${provider}. Please check Settings.`);
       }
 
-      const responseText = result.text.trim();
+      let responseText = "";
+
+      if (provider === 'gemini' && ai) {
+        const conversationContext = history.slice(-10).map(item => ({
+          role: item.role,
+          parts: [{ text: item.content }]
+        }));
+
+        const result = await ai.models.generateContent({
+          model: selectedModel,
+          contents: [...conversationContext, { role: 'user', parts: [{ text: userQuery }] }],
+          config: { systemInstruction: SYSTEM_PROMPT(memory), responseMimeType: "application/json" },
+        });
+        responseText = result.text || "";
+      } 
+      else if (provider === 'openai') {
+        const client = new OpenAI({ apiKey: openaiKey, dangerouslyAllowBrowser: true });
+        const messages: any[] = [
+          { role: 'system', content: SYSTEM_PROMPT(memory) + "\nIMPORTANT: Return ONLY valid JSON." },
+          ...history.slice(-10).map(i => ({ role: i.role === 'model' ? 'assistant' : 'user', content: i.content })),
+          { role: 'user', content: userQuery }
+        ];
+        const res = await client.chat.completions.create({ model: selectedModel, messages, response_format: { type: "json_object" } });
+        responseText = res.choices[0].message.content || "";
+      }
+      else if (provider === 'anthropic') {
+        const client = new Anthropic({ apiKey: anthropicKey, dangerouslyAllowBrowser: true });
+        const res = await client.messages.create({
+          model: selectedModel,
+          system: SYSTEM_PROMPT(memory) + "\nIMPORTANT: Return ONLY valid JSON.",
+          max_tokens: 1024,
+          messages: [
+            ...history.slice(-10).map(i => ({ role: i.role === 'model' ? 'assistant' : 'user', content: i.content })),
+            { role: 'user', content: userQuery }
+          ] as any
+        });
+        responseText = (res.content[0] as any).text || "";
+      }
+
+      if (!responseText) throw new Error("Empty response from AI service");
       const parsed: CommandResponse = JSON.parse(responseText);
 
       // Execute command if present
@@ -394,21 +428,75 @@ export default function App() {
                 {settingsTab === 'api' ? (
                   <>
                     <h3 className="text-xl font-bold text-win-blue mb-2 flex items-center gap-2">
-                       Local Configuration
+                       Intelligence Configuration
                     </h3>
-                    <p className="text-sm text-sleek-dim mb-6">Enter your Gemini API Key below to use the agent locally.</p>
+                    <p className="text-sm text-sleek-dim mb-6">Select your AI provider and configure your API keys.</p>
                     
-                    <form onSubmit={saveKey} className="space-y-4">
+                    <form onSubmit={saveKey} className="space-y-4 max-h-[450px] overflow-y-auto pr-2 sleek-scroll">
                       <div>
-                        <label className="text-[11px] uppercase text-sleek-dim font-bold mb-2 block">Gemini API Key</label>
-                        <input 
-                          type="password"
-                          value={localApiKey}
-                          onChange={(e) => setLocalApiKey(e.target.value)}
-                          placeholder="AQ.Ab8RN6..."
-                          className="w-full bg-sleek-card border border-sleek-border rounded-lg px-4 py-3 text-sm focus:border-win-blue focus:outline-none"
-                        />
+                        <label className="text-[11px] uppercase text-sleek-dim font-bold mb-2 block">AI Provider</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { id: 'gemini', label: 'Gemini' },
+                            { id: 'openai', label: 'OpenAI' },
+                            { id: 'anthropic', label: 'Claude' }
+                          ].map(p => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => {
+                                setProvider(p.id as any);
+                                // Default model suggestions based on provider
+                                if (p.id === 'gemini') setSelectedModel('gemini-3.1-flash-lite-preview');
+                                if (p.id === 'openai') setSelectedModel('gpt-4o-mini');
+                                if (p.id === 'anthropic') setSelectedModel('claude-3-5-sonnet-latest');
+                              }}
+                              className={`py-2 text-[10px] uppercase font-bold rounded border transition-all ${provider === p.id ? 'bg-win-blue border-win-blue text-white' : 'border-sleek-border hover:border-sleek-dim text-sleek-dim'}`}
+                            >
+                              {p.label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
+
+                      {provider === 'gemini' && (
+                        <div>
+                          <label className="text-[11px] uppercase text-sleek-dim font-bold mb-2 block">Gemini API Key</label>
+                          <input 
+                            type="password"
+                            value={geminiKey}
+                            onChange={(e) => setGeminiKey(e.target.value)}
+                            placeholder="AQ.Ab8RN6..."
+                            className="w-full bg-sleek-card border border-sleek-border rounded-lg px-4 py-3 text-sm focus:border-win-blue focus:outline-none"
+                          />
+                        </div>
+                      )}
+
+                      {provider === 'openai' && (
+                        <div>
+                          <label className="text-[11px] uppercase text-sleek-dim font-bold mb-2 block">OpenAI API Key</label>
+                          <input 
+                            type="password"
+                            value={openaiKey}
+                            onChange={(e) => setOpenaiKey(e.target.value)}
+                            placeholder="sk-..."
+                            className="w-full bg-sleek-card border border-sleek-border rounded-lg px-4 py-3 text-sm focus:border-win-blue focus:outline-none"
+                          />
+                        </div>
+                      )}
+
+                      {provider === 'anthropic' && (
+                        <div>
+                          <label className="text-[11px] uppercase text-sleek-dim font-bold mb-2 block">Claude API Key</label>
+                          <input 
+                            type="password"
+                            value={anthropicKey}
+                            onChange={(e) => setAnthropicKey(e.target.value)}
+                            placeholder="sk-ant-..."
+                            className="w-full bg-sleek-card border border-sleek-border rounded-lg px-4 py-3 text-sm focus:border-win-blue focus:outline-none"
+                          />
+                        </div>
+                      )}
 
                       <div>
                         <label className="text-[11px] uppercase text-sleek-dim font-bold mb-2 block">AI Model Selection</label>
@@ -417,13 +505,28 @@ export default function App() {
                           onChange={(e) => setSelectedModel(e.target.value)}
                           className="w-full bg-sleek-card border border-sleek-border rounded-lg px-4 py-3 text-sm focus:border-win-blue focus:outline-none text-sleek-text appearance-none"
                         >
-                          <option value="gemini-3.1-flash-lite-preview">Gemini 1.5 Flash-Lite (Highest Quota)</option>
-                          <option value="gemini-3-flash-preview">Gemini 1.5 Flash (Balanced)</option>
-                          <option value="gemini-3-pro-preview">Gemini 1.5 Pro (Most Capable)</option>
+                          {provider === 'gemini' && (
+                            <>
+                              <option value="gemini-3.1-flash-lite-preview">1.5 Flash-Lite (Fastest)</option>
+                              <option value="gemini-3-flash-preview">1.5 Flash (Balanced)</option>
+                              <option value="gemini-3-pro-preview">1.5 Pro (Precision)</option>
+                            </>
+                          )}
+                          {provider === 'openai' && (
+                            <>
+                              <option value="gpt-4o-mini">GPT-4o Mini (Fast)</option>
+                              <option value="gpt-4o">GPT-4o (Premium)</option>
+                              <option value="o1-mini">o1 Mini (Logic)</option>
+                            </>
+                          )}
+                          {provider === 'anthropic' && (
+                            <>
+                              <option value="claude-3-5-sonnet-latest">Claude 3.5 Sonnet</option>
+                              <option value="claude-3-5-haiku-latest">Claude 3.5 Haiku</option>
+                              <option value="claude-3-opus-latest">Claude 3 Opus</option>
+                            </>
+                          )}
                         </select>
-                        <p className="text-[10px] text-sleek-dim mt-2 italic">
-                          Tip: Use Flash-Lite to avoid "Quota Exceeded" errors on free accounts.
-                        </p>
                       </div>
 
                       <div className="pt-4 border-t border-sleek-border/30">
@@ -521,10 +624,10 @@ export default function App() {
         )}
       </AnimatePresence>
       {/* Sidebar */}
-      <aside className="w-[280px] bg-sleek-surface border-r border-sleek-border p-6 flex flex-col gap-6">
+        <aside className="w-[280px] bg-sleek-surface border-r border-sleek-border p-6 flex flex-col gap-6">
         <div className="flex items-center gap-2 text-lg font-bold text-sleek-blue tracking-tight">
-          <div className="w-4 h-4 bg-sleek-blue rounded-[2px]" />
-          WinAutomate v2.4
+          <div className="w-4 h-4 bg-win-blue rounded-full shadow-[0_0_12px_rgba(0,120,212,0.6)]" />
+          JARVIS v2.6
         </div>
 
         <div className="space-y-4">

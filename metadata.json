@@ -1,6 +1,6 @@
 {
-  "name": "Windows Command Agent",
-  "description": "A natural language interface that converts user requests into structured automation commands for Windows.",
+  "name": "Jarvis",
+  "description": "Your personal AI assistant for Windows automation, inspired by Tony Stark's legendary interface. Control your PC with natural language, voice, and intelligent multi-model support.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

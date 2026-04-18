@@ -1,4 +1,12 @@
-# Changelog - WinAutomate Agent
+# Changelog - JARVIS Agent
+
+## [2.6.0] - 2026-04-18
+### Added
+- **Application Renaming**: Project officially rebranded as **JARVIS** v2.6.
+- **Multi-Model Support**: Integrated **OpenAI (GPT-4o/o1)** and **Anthropic (Claude 3.5)** support.
+- **Provider Switcher**: New UI component to toggle between Gemini, OpenAI, and Anthropic.
+- **API Key Management**: Independent key storage for each AI provider.
+- **Upgraded System Prompt**: Updated JARVIS identity and professional tone.
 
 ## [2.5.0] - 2026-04-18
 ### Added
