@@ -1,5 +1,9 @@
 # Changelog - JARVIS Agent
 
+## [2.9.5] - 2026-04-18
+### Added
+- **Native Wildcard Deletion**: Rewrote `file_operation` -> `delete` to handle Windows environment variables (like `%USERPROFILE%`) and wildcard parsing (`*`) natively in Python. This bypasses the notoriously fragile syntax of the Windows CMD `for /d` loop entirely, making commands sent by JARVIS 100% resilient when cleaning up Downloads or temp directories.
+
 ## [2.9.4] - 2026-04-18
 ### Fixed
 - **Subprocess CMD Stability**: Completely rewrote the `run_command` logic in `agent_runner.py`. Previously, it spawned visible `start cmd /k` popups which struggled with complex loop variable evaluation (like `%d`). Now, it leverages deep `subprocess.run(shell=True)` which executes entirely invisibly in the background. Features real-time output capturing natively returned back to JARVIS (timeout of 60s), meaning JARVIS now instantly sees execution success or failure of your console commands!

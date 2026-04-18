@@ -102,10 +102,20 @@ def execute():
                     f.write(content)
                 return jsonify({"status": "success", "msg": f"Created {path}"})
             elif op == 'delete':
-                if os.path.exists(path):
-                    if os.path.isdir(path): shutil.rmtree(path)
-                    else: os.remove(path)
-                return jsonify({"status": "success"})
+                import glob
+                expanded_path = os.path.expandvars(path)
+                matches = glob.glob(expanded_path)
+                
+                if matches:
+                    for match in matches:
+                        try:
+                            if os.path.isdir(match): shutil.rmtree(match)
+                            else: os.remove(match)
+                        except Exception as e:
+                            print(f"[!] Failed to delete {match}: {e}")
+                    return jsonify({"status": "success", "msg": f"Deleted {len(matches)} items matching {path}"})
+                else:
+                    return jsonify({"status": "success", "msg": "Target not found (already deleted or wrong path)."})
             elif op == 'read':
                 if os.path.exists(path):
                     with open(path, 'r', encoding='utf-8') as f:
