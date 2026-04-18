@@ -1,5 +1,12 @@
 # Changelog - WinAutomate Agent
 
+## [2.5.0] - 2026-04-18
+### Added
+- **Neural AI Voices**: Integrated `gemini-3.1-flash-tts-preview` for human-like speech.
+- **Voice Selection**: Added UI to choose between different AI personalities (Kore, Fenrir, Aoede, etc.).
+- **PCM Audio Engine**: Custom playback engine for raw 24kHz audio data from Gemini.
+- **Hybrid TTS**: Seamless fallback to system voices if AI voice is disabled or квота исчерпана.
+
 ## [2.4.4] - 2026-04-18
 ### Fixed
 - Improved Speech Recognition stability and error handling.

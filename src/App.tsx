@@ -63,24 +63,102 @@ export default function App() {
   const [localApiKey, setLocalApiKey] = useState(localStorage.getItem('WIN_AGENT_KEY') || '');
   const [selectedModel, setSelectedModel] = useState(localStorage.getItem('WIN_AGENT_MODEL') || 'gemini-3.1-flash-lite-preview');
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(localStorage.getItem('WIN_AGENT_VOICE') === 'true');
+  const [isAIVoiceEnabled, setIsAIVoiceEnabled] = useState(localStorage.getItem('WIN_AGENT_AI_VOICE') === 'true');
+  const [aiVoiceName, setAiVoiceName] = useState(localStorage.getItem('WIN_AGENT_AI_VOICE_NAME') || 'Kore');
   const [isListening, setIsListening] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
 
-  // Initialize Speech Recognition
+  useEffect(() => {
+    localStorage.setItem('WIN_AGENT_VOICE', String(isVoiceEnabled));
+  }, [isVoiceEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('WIN_AGENT_AI_VOICE', String(isAIVoiceEnabled));
+  }, [isAIVoiceEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('WIN_AGENT_AI_VOICE_NAME', aiVoiceName);
+  }, [aiVoiceName]);
+
+  const playRawPCM = (base64Data: string) => {
+    try {
+      const sampleRate = 24000;
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate });
+      const binaryString = window.atob(base64Data);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      
+      const int16Array = new Int16Array(bytes.buffer);
+      const float32Array = new Float32Array(int16Array.length);
+      for (let i = 0; i < int16Array.length; i++) {
+        float32Array[i] = int16Array[i] / 32768;
+      }
+
+      const buffer = audioContext.createBuffer(1, float32Array.length, sampleRate);
+      buffer.getChannelData(0).set(float32Array);
+      
+      const source = audioContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioContext.destination);
+      source.start();
+    } catch (e) {
+      console.error("Audio playback error:", e);
+    }
+  };
+
+  const speak = async (text: string) => {
+    if (!isVoiceEnabled) return;
+
+    // Use AI Voice if enabled and key is present
+    if (isAIVoiceEnabled && ai) {
+      try {
+        const response = await ai.models.generateContent({
+          model: "gemini-3.1-flash-tts-preview",
+          contents: [{ parts: [{ text }] }],
+          config: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: aiVoiceName },
+              },
+            },
+          },
+        });
+
+        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (base64Audio) {
+          playRawPCM(base64Audio);
+          return;
+        }
+      } catch (e) {
+        console.error("AI TTS failed, falling back to system voice:", e);
+      }
+    }
+
+    // Default System Voice Fallback
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ru-RU';
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // --- RESTORED SPEECH REC ---
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       recognitionRef.current = new SpeechRecognition();
       recognitionRef.current.continuous = false;
       recognitionRef.current.interimResults = false;
-      recognitionRef.current.lang = 'ru-RU'; // Default to Russian as per user conversation
+      recognitionRef.current.lang = 'ru-RU';
 
       recognitionRef.current.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
         setInput(transcript);
         setIsListening(false);
-        // Auto-submit after voice input
         setTimeout(() => {
           const submitBtn = document.getElementById('submit-prompt');
           submitBtn?.click();
@@ -94,7 +172,7 @@ export default function App() {
 
   const toggleListening = () => {
     if (!recognitionRef.current) {
-      alert("Ваш браузер не поддерживает голосовое управление. Пожалуйста, используйте Google Chrome или обновите текущий браузер.");
+      alert("Ваш браузер не поддерживает голосовое управление. Пожалуйста, используйте Google Chrome.");
       return;
     }
 
@@ -107,20 +185,11 @@ export default function App() {
         setIsListening(true);
         recognitionRef.current.start();
       } catch (e) {
-        console.error("Speech recognition start error:", e);
         setIsListening(false);
-        alert("Не удалось включить микрофон. Убедитесь, что вы дали разрешение в браузере.");
       }
     }
   };
-
-  const speak = (text: string) => {
-    if (!isVoiceEnabled) return;
-    window.speechSynthesis.cancel(); // Stop current speech
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ru-RU';
-    window.speechSynthesis.speak(utterance);
-  };
+  // --- END RESTORED ---
   
   // Safe detection for API Key in various environments (Vite/Node/Manual)
   const getEnvironmentApiKey = () => {
@@ -355,6 +424,40 @@ export default function App() {
                         <p className="text-[10px] text-sleek-dim mt-2 italic">
                           Tip: Use Flash-Lite to avoid "Quota Exceeded" errors on free accounts.
                         </p>
+                      </div>
+
+                      <div className="pt-4 border-t border-sleek-border/30">
+                        <label className="text-[11px] uppercase text-win-blue font-bold mb-4 block">Neural AI Voice (TTS)</label>
+                        <div className="flex items-center justify-between mb-4 bg-black/20 p-3 rounded-lg border border-sleek-border/50">
+                          <span className="text-sm">Enable Human-like AI Voice</span>
+                          <button 
+                            type="button"
+                            onClick={() => setIsAIVoiceEnabled(!isAIVoiceEnabled)}
+                            className={`w-10 h-5 rounded-full transition-all relative ${isAIVoiceEnabled ? 'bg-win-blue shadow-[0_0_8px_rgba(0,120,212,0.4)]' : 'bg-sleek-border'}`}
+                          >
+                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isAIVoiceEnabled ? 'left-6' : 'left-1'}`} />
+                          </button>
+                        </div>
+
+                        {isAIVoiceEnabled && (
+                          <div className="space-y-3">
+                            <label className="text-[10px] uppercase text-sleek-dim font-bold block">Select Personality</label>
+                            <select 
+                              value={aiVoiceName}
+                              onChange={(e) => setAiVoiceName(e.target.value)}
+                              className="w-full bg-sleek-card border border-sleek-border rounded-lg px-4 py-3 text-sm focus:border-win-blue focus:outline-none text-sleek-text appearance-none"
+                            >
+                              <option value="Kore">Kore (Balanced & Warm)</option>
+                              <option value="Puck">Puck (Cheerful & High-pitched)</option>
+                              <option value="Charon">Charon (Deep & Professional)</option>
+                              <option value="Fenrir">Fenrir (Mysterious & Robotic-Human)</option>
+                              <option value="Zephyr">Zephyr (Soft & Calm)</option>
+                            </select>
+                            <p className="text-[10px] text-sleek-dim italic leading-relaxed">
+                              *AI Voice uses Gemini TTS API Units. Fallback to System Voice if quota is low.
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex gap-3 pt-4">
