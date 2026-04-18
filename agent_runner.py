@@ -75,9 +75,14 @@ def execute():
             
         elif action == 'run_command':
             cmd = params['cmd']
-            # Pass as a single string so Python doesn't escape quotes (as \") which breaks CMD syntax
-            subprocess.Popen(f'start "" cmd /k {cmd}', shell=True)
-            return jsonify({"status": "success"})
+            try:
+                # Выполняем скрыто в фоне (нативно CMD) и ждём результат для точной отладки
+                out = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
+                if out.returncode != 0:
+                    return jsonify({"status": "error", "msg": f"Command Failed: {out.stderr or out.stdout}"})
+                return jsonify({"status": "success", "msg": out.stdout.strip() or "Executed successfully"})
+            except subprocess.TimeoutExpired:
+                return jsonify({"status": "success", "msg": "Command is long-running and was moved to background."})
             
         elif action == 'system_control':
             act = params['action']

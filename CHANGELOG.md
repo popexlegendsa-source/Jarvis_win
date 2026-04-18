@@ -1,5 +1,9 @@
 # Changelog - JARVIS Agent
 
+## [2.9.4] - 2026-04-18
+### Fixed
+- **Subprocess CMD Stability**: Completely rewrote the `run_command` logic in `agent_runner.py`. Previously, it spawned visible `start cmd /k` popups which struggled with complex loop variable evaluation (like `%d`). Now, it leverages deep `subprocess.run(shell=True)` which executes entirely invisibly in the background. Features real-time output capturing natively returned back to JARVIS (timeout of 60s), meaning JARVIS now instantly sees execution success or failure of your console commands!
+
 ## [2.9.3] - 2026-04-18
 ### Fixed
 - **CMD Syntax Escaping in Python**: Fixed a critical bug in `agent_runner.py`'s `run_command` logic where complex Windows CMD commands containing quotes and variables (like `for /d %d` loops) were failing. This was caused by Python's `subprocess` list-to-string conversion escaping inner double-quotes as `\"`, which CMD natively rejects. It now injects raw strings accurately to the Windows native shell.
