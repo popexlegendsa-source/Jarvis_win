@@ -1,5 +1,10 @@
 # Changelog - JARVIS Agent
 
+## [2.6.3] - 2026-04-18
+### Added
+- **Release Automation**: Added `release.bat` to automate Git tagging and versioning.
+- **Workflow Optimization**: Synchronized AI Studio exports with official GitHub Releases.
+
 ## [2.6.2] - 2026-04-18
 ### Fixed
 - Fixed `ReferenceError: localApiKey is not defined` caused by renaming variables during the multi-model update.
