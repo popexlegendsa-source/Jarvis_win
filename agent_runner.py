@@ -48,7 +48,7 @@ def countdown_warning(action_name):
 
 @app.route('/ping', methods=['GET'])
 def ping():
-    return jsonify({"status": "connected", "version": "2.9.5", "secure": SECURITY_TOKEN is not None})
+    return jsonify({"status": "connected", "version": "2.9.6", "secure": SECURITY_TOKEN is not None})
 
 @app.route('/execute', methods=['POST'])
 def execute():
@@ -76,10 +76,11 @@ def execute():
         elif action == 'run_command':
             cmd = params['cmd']
             try:
-                # Выполняем скрыто в фоне (нативно CMD) и ждём результат для точной отладки
-                out = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
+                # Исполняем нативно через PowerShell для максимальной мощи и избежания багов CMD
+                ps_args = ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", cmd]
+                out = subprocess.run(ps_args, capture_output=True, text=True, timeout=60)
                 if out.returncode != 0:
-                    return jsonify({"status": "error", "msg": f"Command Failed: {out.stderr or out.stdout}"})
+                    return jsonify({"status": "error", "msg": f"PowerShell Error: {out.stderr or out.stdout}"})
                 return jsonify({"status": "success", "msg": out.stdout.strip() or "Executed successfully"})
             except subprocess.TimeoutExpired:
                 return jsonify({"status": "success", "msg": "Command is long-running and was moved to background."})
@@ -144,7 +145,7 @@ def execute():
         return jsonify({"status": "error", "msg": str(e)}), 500
 
 if __name__ == '__main__':
-    print("--- JARVIS Automation Runner v2.9.5 ---")
+    print("--- JARVIS Automation Runner v2.9.6 ---")
     if SECURITY_TOKEN:
         print("[SECURE MODE] Local runner locked with Access Token.")
     else:

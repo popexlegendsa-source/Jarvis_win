@@ -43,9 +43,9 @@ Available commands:
 2. open_url {"url": string}
 3. type_text {"text": string}
 4. press_keys {"keys": string}
-5. run_command {"cmd": string}
+5. run_command {"cmd": string} - EXECUTED IN POWERSHELL. Use PS syntax (e.g. Remove-Item, $env:USERPROFILE).
 6. system_control {"action": "shutdown|restart|sleep"}
-7. file_operation {"operation": "create|delete|read", "path": string}
+7. file_operation {"operation": "create|delete|read", "path": string} (Supports Python glob wildcards)
 8. update_memory {"key": string, "value": any} - Use this to remember things about the user (e.g. name, preferences).
 
 Return ONLY the JSON object.`;

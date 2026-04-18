@@ -1,5 +1,9 @@
 # Changelog - JARVIS Agent
 
+## [2.9.6] - 2026-04-18
+### Changed
+- **PowerShell Migration**: Users requested moving away from the archaic and buggy `cmd.exe`. In `agent_runner.py`, `run_command` has been entirely rebuilt to strictly use PowerShell native execution (`powershell -ExecutionPolicy Bypass -Command`). Along with this, the `App.tsx` AI System Prompt was explicitly updated so that JARVIS now natively speaks and executes standard PowerShell syntax instead of CMD syntax. This grants massive improvements for file operations, fetching system processes, and handling variables.
+
 ## [2.9.5] - 2026-04-18
 ### Added
 - **Native Wildcard Deletion**: Rewrote `file_operation` -> `delete` to handle Windows environment variables (like `%USERPROFILE%`) and wildcard parsing (`*`) natively in Python. This bypasses the notoriously fragile syntax of the Windows CMD `for /d` loop entirely, making commands sent by JARVIS 100% resilient when cleaning up Downloads or temp directories.
