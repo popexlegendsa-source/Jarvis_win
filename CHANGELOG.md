@@ -1,5 +1,15 @@
 # Changelog - JARVIS Agent
 
+## [2.7.2] - 2026-04-18
+### Fixed
+- **Command Execution Issue**: Fixed a bug where keyboard shortcuts (like `press_keys`) and file operations were displayed in UI but not executed by the system.
+- **Backend Expansion**: Added `pyautogui` support to the Python runner for keyboard/mouse simulation.
+- **New Commands Support**: Fully implemented `press_keys`, `type_text`, `file_operation`, and `sleep`.
+
+## [2.7.1] - 2026-04-18
+### Added
+- **Auto-Update on Start**: JARVIS now automatically performs a `git pull` every time you launch `run_local.bat`. This ensures you always have the latest fixes and features from the GitHub repository.
+
 ## [2.7.0] - 2026-04-18
 ### Added
 - **Intelligent Auto-Installer**: `run_local.bat` now uses Windows Package Manager (`winget`) to automatically detect and install missing dependencies: Node.js, Git, and Python.
