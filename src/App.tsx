@@ -18,6 +18,7 @@ import {
   Trash2,
   Mic,
   MicOff,
+  RefreshCw,
   Volume2,
   VolumeX
 } from 'lucide-react';
@@ -49,6 +50,8 @@ Available commands:
 
 Return ONLY the JSON object.`;
 
+import pkg from '../package.json';
+
 export default function App() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -61,8 +64,33 @@ export default function App() {
     return saved ? JSON.parse(saved) : {};
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'api' | 'memory'>('api');
+  const [settingsTab, setSettingsTab] = useState<'api' | 'memory' | 'sync'>('api');
   
+  // Bridge Token & Connection Status
+  const [bridgeToken, setBridgeToken] = useState(() => {
+    const saved = localStorage.getItem('WIN_AGENT_BRIDGE_TOKEN');
+    if (saved) return saved;
+    const newToken = Math.random().toString(36).substring(2).toUpperCase() + Math.random().toString(36).substring(2).toUpperCase();
+    localStorage.setItem('WIN_AGENT_BRIDGE_TOKEN', newToken);
+    return newToken;
+  });
+  const [isConnected, setIsConnected] = useState(false);
+
+  useEffect(() => {
+    const pingLocal = async () => {
+      try {
+        const res = await fetch('http://127.0.0.1:5000/ping');
+        if (res.ok) setIsConnected(true);
+        else setIsConnected(false);
+      } catch (e) {
+        setIsConnected(false);
+      }
+    };
+    pingLocal();
+    const interval = setInterval(pingLocal, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Multi-Provider Keys
   const [provider, setProvider] = useState<'gemini' | 'openai' | 'anthropic'>(localStorage.getItem('WIN_AGENT_PROVIDER') as any || 'gemini');
   const [geminiKey, setGeminiKey] = useState(localStorage.getItem('WIN_AGENT_KEY') || '');
@@ -346,9 +374,12 @@ export default function App() {
           }
         } else {
           try {
-            fetch('http://localhost:5000/execute', {
+            fetch('http://127.0.0.1:5000/execute', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${bridgeToken}`
+              },
               body: JSON.stringify(parsed.command)
             }).catch(() => {
               console.log("Local runner not responding (this is expected if not running locally)");
@@ -425,10 +456,16 @@ export default function App() {
                 >
                   <Brain className="w-4 h-4" /> Agent Memory
                 </button>
+                <button 
+                  onClick={() => setSettingsTab('sync')}
+                  className={`flex-1 py-4 text-sm font-bold flex items-center justify-center gap-2 transition-all ${settingsTab === 'sync' ? 'text-win-blue border-b-2 border-win-blue bg-win-blue/5' : 'text-sleek-dim hover:text-white'}`}
+                >
+                  <RefreshCw className="w-4 h-4" /> Direct Sync
+                </button>
               </div>
 
               <div className="p-8">
-                {settingsTab === 'api' ? (
+                {settingsTab === 'api' && (
                   <>
                     <h3 className="text-xl font-bold text-win-blue mb-2 flex items-center gap-2">
                        Intelligence Configuration
@@ -566,7 +603,29 @@ export default function App() {
                         )}
                       </div>
 
-                      <div className="flex gap-3 pt-4">
+                      <div className="pt-4 border-t border-sleek-border/30">
+                        <label className="text-[11px] uppercase text-win-blue font-bold mb-4 block">Local PC Bridge Token</label>
+                        <p className="text-[10px] text-sleek-dim mb-3">Copy this Token and enter it in your command prompt when JARVIS asks. This protects your PC from unauthorized remote executions.</p>
+                        <div className="flex gap-2">
+                          <input 
+                            readOnly
+                            value={bridgeToken}
+                            className="flex-1 bg-black/40 border border-win-blue/30 rounded-lg px-3 py-2 text-sm font-mono text-win-blue"
+                          />
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(bridgeToken);
+                              alert("Token copied!");
+                            }}
+                            className="p-2 bg-win-blue/20 hover:bg-win-blue/40 text-win-blue rounded-lg transition-all"
+                          >
+                            <Copy className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-3 pt-6 border-t border-sleek-border/30">
                         <button 
                           type="button"
                           onClick={() => setIsSettingsOpen(false)}
@@ -583,7 +642,9 @@ export default function App() {
                       </div>
                     </form>
                   </>
-                ) : (
+                )}
+
+                {settingsTab === 'memory' && (
                   <div className="flex flex-col gap-4">
                     <h3 className="text-xl font-bold text-win-blue mb-2 flex items-center gap-2">
                        Personalization
@@ -605,18 +666,63 @@ export default function App() {
                       )}
                     </div>
 
-                    <div className="flex gap-3 pt-4">
-                      <button 
+                    <div className="flex gap-3 pt-4" />
+                    <button 
+                      onClick={() => setIsSettingsOpen(false)}
+                      className="w-full py-3 text-sm font-semibold text-sleek-dim hover:text-white transition-colors"
+                    >
+                      Close Settings
+                    </button>
+                  </div>
+                )}
+
+                {settingsTab === 'sync' && (
+                  <div className="space-y-6">
+                    <h3 className="text-xl font-bold text-win-blue mb-2 flex items-center gap-2">
+                       Direct OTA Sync
+                    </h3>
+                    <p className="text-sm text-sleek-dim">
+                      Skip GitHub and sync JARVIS code directly from this browser context to your local PC.
+                    </p>
+
+                    <div className="bg-black/30 p-4 rounded-xl border border-sleek-border/50 space-y-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase text-win-blue font-bold">Your Sync URL</label>
+                        <div className="flex gap-2">
+                          <input 
+                            readOnly
+                            value={window.location.origin}
+                            className="flex-1 bg-sleek-card border border-sleek-border rounded-lg px-3 py-2 text-xs font-mono text-sleek-text"
+                          />
+                          <button 
+                            onClick={() => {
+                              navigator.clipboard.writeText(window.location.origin);
+                              alert("URL Copied!");
+                            }}
+                            className="p-2 bg-win-blue/20 hover:bg-win-blue/40 text-win-blue rounded-lg transition-all"
+                          >
+                            <Copy className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-win-blue/5 border border-win-blue/20 rounded-lg">
+                        <p className="text-[11px] text-sleek-dim leading-relaxed">
+                          <strong className="text-win-blue">Instruction:</strong><br />
+                          1. Copy the URL above.<br />
+                          2. Run <code className="text-white">run_local.bat</code> on your PC.<br />
+                          3. Select <code className="text-white">y</code> for "Sync with AI Studio Cloud?".<br />
+                          4. Paste this URL when prompted.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-4">
+                       <button 
                         onClick={() => setIsSettingsOpen(false)}
-                        className="flex-1 py-3 text-sm font-semibold text-sleek-dim hover:text-white transition-colors"
+                        className="w-full py-3 text-sm font-semibold text-sleek-dim hover:text-white transition-colors"
                       >
-                        Close
-                      </button>
-                      <button 
-                        onClick={clearAllData}
-                        className="flex-1 py-3 bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg text-sm font-semibold hover:bg-red-500/20 transition-all flex items-center justify-center gap-2"
-                      >
-                        <Trash2 className="w-4 h-4" /> Reset All Data
+                        Close Settings
                       </button>
                     </div>
                   </div>
@@ -630,16 +736,17 @@ export default function App() {
         <aside className="w-[280px] bg-sleek-surface border-r border-sleek-border p-6 flex flex-col gap-6">
         <div className="flex items-center gap-2 text-lg font-bold text-sleek-blue tracking-tight">
           <div className="w-4 h-4 bg-win-blue rounded-full shadow-[0_0_12px_rgba(0,120,212,0.6)]" />
-          JARVIS v2.6
+          JARVIS v{pkg.version}
         </div>
 
         <div className="space-y-4">
           <div className="bg-sleek-card border border-sleek-border rounded-xl p-4">
-            <span className="text-[11px] uppercase text-sleek-dim tracking-wider mb-2 block font-semibold">System Link</span>
+            <span className="text-[11px] uppercase text-sleek-dim tracking-wider mb-2 block font-semibold">Local PC Bridge</span>
             <div className="text-sm flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-sleek-green indicator-glow" />
-              Connected
+              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-sleek-green indicator-glow' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'}`} />
+              {isConnected ? 'Online & Secured' : 'Offline'}
             </div>
+            {!isConnected && <p className="text-[10px] text-red-400 mt-2">Run run_local.bat on PC to connect</p>}
           </div>
 
           <div className="bg-sleek-card border border-sleek-border rounded-xl p-4">

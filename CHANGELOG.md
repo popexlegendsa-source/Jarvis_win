@@ -1,5 +1,33 @@
 # Changelog - JARVIS Agent
 
+## [2.9.1] - 2026-04-18
+### Changed
+- **Private Git Workflow**: Re-wrote the local startup script's git pull logic. `run_local.bat` will now strictly attach to the user's private GitHub repository (`https://github.com/popexlegendsa-source/Jarvis_win.git`) and auto-pull the `main` branch. This natively triggers the Windows Git Credential Manager for secure authentication.
+
+## [2.9.0] - 2026-04-18
+### Added
+- **Security & RCE Protection**: Implemented a mandatory **Local Bridge Token** mechanism. The Python remote execution endpoint (`/execute`) is now protected via `Authorization: Bearer` token validation.
+- **Connection Indicator UI**: Added a real-time polling mechanism that displays whether the local Python server is online and secured directly in the UI sidebar.
+- **Auto-Type Failsets**: Added a mandatory 3-second countdown and warning beeps before any PyAutoGUI `type_text` or `press_keys` commands to prevent accidental automated typing into personal chats or active windows.
+
+## [2.8.3] - 2026-04-18
+### Fixed
+- **OTA URL Parsing**: Fixed a bug where a rogue trailing space in the pasted URL would cause a `curl: (3) URL rejected` error.
+
+## [2.8.2] - 2026-04-18
+### Fixed
+- **OTA Sync Extraction**: Fixed a critical PowerShell extraction bug (`Expand-Archive`) caused by URL malformation and incorrect ZIP payload structure. Added `curl -f` failure handling and self-clearing of corrupted `.sync_url` files.
+
+## [2.8.1] - 2026-04-18
+### Fixed
+- **UI Versioning**: Fixed the hardcoded "v2.6" string in the sidebar menu. The UI now dynamically reads its version from the core package configuration.
+
+## [2.8.0] - 2026-04-18
+### Added
+- **Direct OTA Sync**: JARVIS now supports "Over-The-Air" updates. You can sync your local project directly with AI Studio context without using GitHub as an intermediate bridge.
+- **Full-Stack Architecture**: Switched to Express/Vite backend to support file streaming and local synchronization.
+- **Sync Module**: Added `/api/sync/bundle` for secure code extraction.
+
 ## [2.7.2] - 2026-04-18
 ### Fixed
 - **Command Execution Issue**: Fixed a bug where keyboard shortcuts (like `press_keys`) and file operations were displayed in UI but not executed by the system.

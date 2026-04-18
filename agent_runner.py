@@ -5,6 +5,13 @@ import subprocess
 import os
 import platform
 import shutil
+import sys
+import time
+
+try:
+    import winsound
+except ImportError:
+    winsound = None
 
 # Пытаемся импортировать pyautogui для работы с клавиатурой
 try:
@@ -17,8 +24,39 @@ except ImportError:
 app = Flask(__name__)
 CORS(app)
 
+# Чтение токена безопасности
+SECURITY_TOKEN = None
+for i, arg in enumerate(sys.argv):
+    if arg == '--token' and i + 1 < len(sys.argv):
+        SECURITY_TOKEN = sys.argv[i + 1]
+
+def require_auth(req):
+    if not SECURITY_TOKEN: return True # Fallback for old run_local.bat without token
+    auth_header = req.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        token = auth_header.split(' ')[1]
+        return token == SECURITY_TOKEN
+    return False
+
+def countdown_warning(action_name):
+    print(f"\n[!] WARNING: Auto-Typing triggered ({action_name}). Don't touch keyboard/mouse!")
+    for i in range(3, 0, -1):
+        print(f"... {i} ...")
+        if winsound: winsound.Beep(1000, 200)
+        time.sleep(1)
+    if winsound: winsound.Beep(1500, 500)
+
+@app.route('/ping', methods=['GET'])
+def ping():
+    return jsonify({"status": "connected", "version": "2.9.0", "secure": SECURITY_TOKEN is not None})
+
 @app.route('/execute', methods=['POST'])
 def execute():
+    # --- PROOF OF AUTHENTICATION ---
+    if not require_auth(request):
+        print("[!] SECURITY ALERT: Unauthorized execution attempt.")
+        return jsonify({"status": "error", "msg": "Unauthorized. Invalid Token."}), 401
+        
     data = request.json
     action = data.get('action')
     params = data.get('params', {})
@@ -71,13 +109,14 @@ def execute():
         # --- Ввод (Клавиатура/Мышь) ---
         elif action == 'press_keys':
             if not pyautogui: return jsonify({"status": "error", "msg": "PyAutoGUI not installed"}), 500
+            countdown_warning("Press Keys")
             keys = params.get('keys', '').lower().split('+')
-            # Пример: 'ctrl+shift+w' -> ['ctrl', 'shift', 'w']
             pyautogui.hotkey(*keys)
             return jsonify({"status": "success"})
 
         elif action == 'type_text':
             if not pyautogui: return jsonify({"status": "error", "msg": "PyAutoGUI not installed"}), 500
+            countdown_warning("Type Text")
             text = params.get('text', '')
             pyautogui.write(text, interval=0.01)
             return jsonify({"status": "success"})
@@ -89,7 +128,12 @@ def execute():
         return jsonify({"status": "error", "msg": str(e)}), 500
 
 if __name__ == '__main__':
-    print("--- JARVIS Automation Runner v2.7.2 ---")
+    print("--- JARVIS Automation Runner v2.9.0 ---")
+    if SECURITY_TOKEN:
+        print("[SECURE MODE] Local runner locked with Access Token.")
+    else:
+        print("[WARNING] Local runner started WITHOUT token security. Vulnerable to RCE.")
+        
     if not pyautogui:
         print("[!] WARNING: PyAutoGUI is missing. Keyboard/Mouse commands will NOT work.")
         print("[!] RUN: pip install pyautogui")
