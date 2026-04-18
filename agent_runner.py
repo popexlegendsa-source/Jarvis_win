@@ -75,7 +75,8 @@ def execute():
             
         elif action == 'run_command':
             cmd = params['cmd']
-            subprocess.Popen(['cmd', '/c', 'start', 'cmd', '/k', cmd], shell=True)
+            # Pass as a single string so Python doesn't escape quotes (as \") which breaks CMD syntax
+            subprocess.Popen(f'start "" cmd /k {cmd}', shell=True)
             return jsonify({"status": "success"})
             
         elif action == 'system_control':

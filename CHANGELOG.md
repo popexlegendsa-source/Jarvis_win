@@ -1,5 +1,9 @@
 # Changelog - JARVIS Agent
 
+## [2.9.3] - 2026-04-18
+### Fixed
+- **CMD Syntax Escaping in Python**: Fixed a critical bug in `agent_runner.py`'s `run_command` logic where complex Windows CMD commands containing quotes and variables (like `for /d %d` loops) were failing. This was caused by Python's `subprocess` list-to-string conversion escaping inner double-quotes as `\"`, which CMD natively rejects. It now injects raw strings accurately to the Windows native shell.
+
 ## [2.9.2] - 2026-04-18
 ### Added
 - **Multi-Model Dynamic Fallback**: Rewrote the AI generation loop for Gemini. If the main chosen model (e.g., `gemini-3.1-flash-lite-preview`) hits the free tier rate limit (`429 Quota Exceeded`), JARVIS will automatically and silently intercept the error and seamlessly fallback to other available models (like `gemini-2.5-flash-8b`, `gemini-2.5-flash`, etc.) in a cascade. This practically overrides individual model API quotas.
