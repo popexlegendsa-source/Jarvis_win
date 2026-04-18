@@ -1,5 +1,10 @@
 # Changelog - JARVIS Agent
 
+## [2.7.0] - 2026-04-18
+### Added
+- **Intelligent Auto-Installer**: `run_local.bat` now uses Windows Package Manager (`winget`) to automatically detect and install missing dependencies: Node.js, Git, and Python.
+- **Workflow Improvement**: Added automated "Winget" fallback for smoother first-time setup on Windows 10/11.
+
 ## [2.6.3] - 2026-04-18
 ### Added
 - **Release Automation**: Added `release.bat` to automate Git tagging and versioning.
