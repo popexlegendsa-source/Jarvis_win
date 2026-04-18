@@ -48,7 +48,7 @@ def countdown_warning(action_name):
 
 @app.route('/ping', methods=['GET'])
 def ping():
-    return jsonify({"status": "connected", "version": "2.9.6", "secure": SECURITY_TOKEN is not None})
+    return jsonify({"status": "connected", "version": "2.9.7", "secure": SECURITY_TOKEN is not None})
 
 @app.route('/execute', methods=['POST'])
 def execute():
@@ -76,14 +76,21 @@ def execute():
         elif action == 'run_command':
             cmd = params['cmd']
             try:
-                # Исполняем нативно через PowerShell для максимальной мощи и избежания багов CMD
-                ps_args = ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", cmd]
-                out = subprocess.run(ps_args, capture_output=True, text=True, timeout=60)
-                if out.returncode != 0:
-                    return jsonify({"status": "error", "msg": f"PowerShell Error: {out.stderr or out.stdout}"})
-                return jsonify({"status": "success", "msg": out.stdout.strip() or "Executed successfully"})
-            except subprocess.TimeoutExpired:
-                return jsonify({"status": "success", "msg": "Command is long-running and was moved to background."})
+                import tempfile
+                import uuid
+                # Записываем команду в .ps1 файл, чтобы избежать любых проблем с экранированием кавычек
+                script_path = os.path.join(tempfile.gettempdir(), f"jarvis_cmd_{uuid.uuid4().hex}.ps1")
+                with open(script_path, "w", encoding="utf-8-sig") as f:
+                    f.write(cmd + "\n")
+                    # Если ошибка - зависаем, чтоб юзер прочитал. Если успех - ждем 2с и закрываемся.
+                    f.write("if (!$?) { Write-Host '--- Error Executing Command ---' -ForegroundColor Red; Read-Host 'Press Enter to close' }\n")
+                    f.write("else { Start-Sleep -Seconds 2 }")
+                
+                # Запускаем в ВИДИМОМ окне (как раньше), чтобы юзер понимал, что процесс идет
+                subprocess.Popen(f'start powershell -NoProfile -ExecutionPolicy Bypass -File "{script_path}"', shell=True)
+                return jsonify({"status": "success", "msg": "Command launched in a visible PowerShell window."})
+            except Exception as e:
+                return jsonify({"status": "error", "msg": str(e)})
             
         elif action == 'system_control':
             act = params['action']
@@ -145,7 +152,7 @@ def execute():
         return jsonify({"status": "error", "msg": str(e)}), 500
 
 if __name__ == '__main__':
-    print("--- JARVIS Automation Runner v2.9.6 ---")
+    print("--- JARVIS Automation Runner v2.9.7 ---")
     if SECURITY_TOKEN:
         print("[SECURE MODE] Local runner locked with Access Token.")
     else:

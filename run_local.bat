@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title JARVIS - Personal Assistant v2.9.6
+title JARVIS - Personal Assistant v2.9.7
 
 echo.
 echo    __  ___  ____  _  _  ____  ____

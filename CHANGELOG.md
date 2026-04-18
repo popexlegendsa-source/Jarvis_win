@@ -1,5 +1,9 @@
 # Changelog - JARVIS Agent
 
+## [2.9.7] - 2026-04-18
+### Changed
+- **Restored Visible Command Execution**: Based on user feedback ("you used to at least run commands, but now it's absolute nothing"), the hidden background execution for PowerShell commands was reverted. However, to solve the original parsing bugs, the commands are now physically saved into a temporary `.ps1` (PowerShell script) file in the `%TEMP%` directory before execution. This completely eliminates all escaping/quoting hell from Python while restoring the satisfying visual feedback of a popping-up console window. The window will auto-close on success or deliberately pause if an error occurs so the user can read the output!
+
 ## [2.9.6] - 2026-04-18
 ### Changed
 - **PowerShell Migration**: Users requested moving away from the archaic and buggy `cmd.exe`. In `agent_runner.py`, `run_command` has been entirely rebuilt to strictly use PowerShell native execution (`powershell -ExecutionPolicy Bypass -Command`). Along with this, the `App.tsx` AI System Prompt was explicitly updated so that JARVIS now natively speaks and executes standard PowerShell syntax instead of CMD syntax. This grants massive improvements for file operations, fetching system processes, and handling variables.
