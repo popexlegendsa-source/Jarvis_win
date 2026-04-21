@@ -68,7 +68,7 @@ export default function App() {
     return saved ? JSON.parse(saved) : {};
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'api' | 'memory' | 'sync'>('api');
+  const [settingsTab, setSettingsTab] = useState<'api' | 'memory'>('api');
   
   // Bridge Token & Connection Status
   const [bridgeToken, setBridgeToken] = useState(() => {
@@ -492,12 +492,6 @@ export default function App() {
                   className={`flex-1 py-4 text-sm font-bold flex items-center justify-center gap-2 transition-all ${settingsTab === 'memory' ? 'text-win-blue border-b-2 border-win-blue bg-win-blue/5' : 'text-sleek-dim hover:text-white'}`}
                 >
                   <Brain className="w-4 h-4" /> Agent Memory
-                </button>
-                <button 
-                  onClick={() => setSettingsTab('sync')}
-                  className={`flex-1 py-4 text-sm font-bold flex items-center justify-center gap-2 transition-all ${settingsTab === 'sync' ? 'text-win-blue border-b-2 border-win-blue bg-win-blue/5' : 'text-sleek-dim hover:text-white'}`}
-                >
-                  <RefreshCw className="w-4 h-4" /> Direct Sync
                 </button>
               </div>
 

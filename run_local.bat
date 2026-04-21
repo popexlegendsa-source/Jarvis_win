@@ -38,46 +38,7 @@ echo [0/5] Cleaning sessions...
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr :3000 ^| findstr LISTENING') do taskkill /f /pid %%a >nul 2>&1
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr :5000 ^| findstr LISTENING') do taskkill /f /pid %%a >nul 2>&1
 
-:: --- 1. ПРОВЕРКА И ПРЯМАЯ СИНХРОНИЗАЦИЯ (OTA) ---
-set /p do_sync="Sync with AI Studio Cloud? (y/n): "
-if /i "!do_sync!"=="y" (
-    echo [OTA] Direct Sync Mode Activated.
-    if not exist .sync_url (
-        set /p s_url="Enter your AI Studio App URL: "
-        echo !s_url! > .sync_url
-    )
-    set /p s_url=<.sync_url
-    
-    :: Очистка URL от кавычек, пробелов и слэша на конце
-    set s_url=!s_url:"=!
-    set s_url=!s_url: =!
-    if "!s_url:~-1!"=="/" set s_url=!s_url:~0,-1!
-    
-    echo [OTA] Fetching latest JARVIS bundle from: !s_url!/api/sync/bundle
-    curl -f -L "!s_url!/api/sync/bundle" -o jarvis_update.zip
-    
-    if not exist jarvis_update.zip (
-        echo [ERROR] Failed to download update. Check URL or internet.
-        del .sync_url
-        pause
-    ) else if %errorlevel% neq 0 (
-        echo [ERROR] Server returned an error. Deleting bad zip...
-        del jarvis_update.zip
-        del .sync_url
-        pause
-    ) else (
-        echo [OTA] Extracting update...
-        powershell -Command "Expand-Archive -Path '.\jarvis_update.zip' -DestinationPath '.' -Force"
-        del jarvis_update.zip
-        echo [SUCCESS] JARVIS updated to latest cloud version!
-        echo [!] Restarting script to apply core changes...
-        pause
-        start run_local.bat
-        exit
-    )
-)
-
-:: --- 2. SECURITY TOKEN SETUP ---
+:: --- 1. SECURITY TOKEN SETUP ---
 if not exist .agent_token (
     echo.
     echo ==================================================
@@ -133,8 +94,12 @@ if not exist node_modules (
 
 :: --- 3. ЗАПУСК БЭКЕНДА ---
 echo [3/5] Starting Automation Agent...
-python -m pip install flask flask-cors pyautogui >nul 2>&1
-start /b "" pythonw agent_runner.py --token !agent_token!
+if exist "assistant.exe" (
+    start /b "" assistant.exe --token !agent_token!
+) else (
+    python -m pip install flask flask-cors pyautogui >nul 2>&1
+    start /b "" pythonw agent_runner.py --token !agent_token!
+)
 
 :: --- 4. ЗАПУСК ФРОНТЕНДА ---
 echo [4/5] Launching Dashboard...
