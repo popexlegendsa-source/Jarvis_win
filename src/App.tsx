@@ -20,9 +20,14 @@ import {
   MicOff,
   RefreshCw,
   Volume2,
-  VolumeX
+  VolumeX,
+  Cloud
 } from 'lucide-react';
 import { CommandResponse, HistoryItem, UserMemory } from './types';
+import { LLMManager } from './ai/LLMManager';
+import { ActionExecutor } from './executor/ActionExecutor';
+import { CommandParser } from './command/CommandParser';
+import { VersionManager } from './system/VersionManager';
 
 const SYSTEM_PROMPT = (memory: UserMemory) => `You are JARVIS, a highly sophisticated AI assistant for Windows automation, inspired by Tony Stark's personal OS.
 Your goal is to help users manage their PC through natural dialogue with a professional, sharp, and helpful tone.
@@ -68,7 +73,7 @@ export default function App() {
     return saved ? JSON.parse(saved) : {};
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'api' | 'memory'>('api');
+  const [settingsTab, setSettingsTab] = useState<'api' | 'memory' | 'sync'>('api');
   
   // Bridge Token & Connection Status
   const [bridgeToken, setBridgeToken] = useState(() => {
@@ -106,6 +111,14 @@ export default function App() {
   const [isAIVoiceEnabled, setIsAIVoiceEnabled] = useState(localStorage.getItem('WIN_AGENT_AI_VOICE') === 'true');
   const [aiVoiceName, setAiVoiceName] = useState(localStorage.getItem('WIN_AGENT_AI_VOICE_NAME') || 'Kore');
   const [isListening, setIsListening] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState<{available: boolean, version: string, downloadUrl?: string} | null>(null);
+
+  useEffect(() => {
+    VersionManager.check().then(result => {
+      if (result.available) setUpdateAvailable(result);
+    });
+  }, []);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
 
@@ -182,7 +195,7 @@ export default function App() {
     // Default System Voice Fallback
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ru-RU';
+    utterance.lang = 'en-US';
     window.speechSynthesis.speak(utterance);
   };
 
@@ -193,7 +206,7 @@ export default function App() {
       recognitionRef.current = new SpeechRecognition();
       recognitionRef.current.continuous = false;
       recognitionRef.current.interimResults = false;
-      recognitionRef.current.lang = 'ru-RU';
+      recognitionRef.current.lang = 'en-US';
 
       recognitionRef.current.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
@@ -212,7 +225,7 @@ export default function App() {
 
   const toggleListening = () => {
     if (!recognitionRef.current) {
-      alert("Ваш браузер не поддерживает голосовое управление. Пожалуйста, используйте Google Chrome.");
+      alert("SYSTEM ERR: SPEECH RECOGNITION NOT SUPPORTED IN CURRENT BROWSER CONTEXT.");
       return;
     }
 
@@ -242,16 +255,13 @@ export default function App() {
     return '';
   };
 
-  const ai = useMemo(() => {
-    try {
-      const key = geminiKey || getEnvironmentApiKey();
-      if (!key) return null;
-      return new GoogleGenAI({ apiKey: key });
-    } catch (e) {
-      console.error("Failed to initialize Gemini AI:", e);
-      return null;
-    }
-  }, [geminiKey]);
+  const llmManager = useMemo(() => new LLMManager(
+    geminiKey || getEnvironmentApiKey(),
+    openaiKey,
+    anthropicKey
+  ), [geminiKey, openaiKey, anthropicKey]);
+
+  const actionExecutor = useMemo(() => new ActionExecutor(bridgeToken), [bridgeToken]);
 
   const hasApiKey = useMemo(() => {
     if (provider === 'gemini') return !!(geminiKey || getEnvironmentApiKey());
@@ -327,72 +337,17 @@ export default function App() {
         throw new Error(`Missing API Key for ${provider}. Please check Settings.`);
       }
 
-      let responseText = "";
-
-      if (provider === 'gemini' && ai) {
-        const conversationContext = history.slice(-10).map(item => ({
-          role: item.role,
-          parts: [{ text: item.content }]
-        }));
-
-        const fallbacks = [selectedModel, "gemini-2.5-flash-8b", "gemini-2.5-flash", "gemini-3.1-flash-lite-preview", "gemini-2.5-pro"];
-        const uniqueFallbacks = [...new Set(fallbacks)];
-
-        let success = false;
-        let lastError = null;
-
-        for (const modelToTry of uniqueFallbacks) {
-          try {
-            console.log(`[Gemini] Attempting to use model: ${modelToTry}`);
-            const result = await ai.models.generateContent({
-              model: modelToTry,
-              contents: [...conversationContext, { role: 'user', parts: [{ text: userQuery }] }],
-              config: { systemInstruction: SYSTEM_PROMPT(memory), responseMimeType: "application/json" },
-            });
-            responseText = result.text || "";
-            success = true;
-            break; 
-          } catch (err: any) {
-            lastError = err;
-            if (err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED') || err?.status === 429) {
-              console.warn(`[Gemini] Model ${modelToTry} quota exceeded, falling back to next model...`);
-              continue;
-            } else {
-              throw err; 
-            }
-          }
-        }
-        
-        if (!success && lastError) {
-          throw lastError;
-        }
-      } 
-      else if (provider === 'openai') {
-        const client = new OpenAI({ apiKey: openaiKey, dangerouslyAllowBrowser: true });
-        const messages: any[] = [
-          { role: 'system', content: SYSTEM_PROMPT(memory) + "\nIMPORTANT: Return ONLY valid JSON." },
-          ...history.slice(-10).map(i => ({ role: i.role === 'model' ? 'assistant' : 'user', content: i.content })),
-          { role: 'user', content: userQuery }
-        ];
-        const res = await client.chat.completions.create({ model: selectedModel, messages, response_format: { type: "json_object" } });
-        responseText = res.choices[0].message.content || "";
-      }
-      else if (provider === 'anthropic') {
-        const client = new Anthropic({ apiKey: anthropicKey, dangerouslyAllowBrowser: true });
-        const res = await client.messages.create({
-          model: selectedModel,
-          system: SYSTEM_PROMPT(memory) + "\nIMPORTANT: Return ONLY valid JSON.",
-          max_tokens: 1024,
-          messages: [
-            ...history.slice(-10).map(i => ({ role: i.role === 'model' ? 'assistant' : 'user', content: i.content })),
-            { role: 'user', content: userQuery }
-          ] as any
-        });
-        responseText = (res.content[0] as any).text || "";
-      }
+      const responseText = await llmManager.generateContent(
+        provider, 
+        selectedModel, 
+        history, 
+        userQuery, 
+        memory, 
+        SYSTEM_PROMPT(memory)
+      );
 
       if (!responseText) throw new Error("Empty response from AI service");
-      const parsed: CommandResponse = JSON.parse(responseText);
+      const parsed = CommandParser.parse(responseText);
 
       // Execute command if present
       if (parsed.command) {
@@ -402,26 +357,8 @@ export default function App() {
             setMemory(prev => ({ ...prev, [key]: value }));
           }
         } else {
-          try {
-            const runnerRes = await fetch('http://127.0.0.1:5000/execute', {
-              method: 'POST',
-              headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${bridgeToken}`
-              },
-              body: JSON.stringify(parsed.command)
-            });
-            const runnerData = await runnerRes.json();
-            
-            if (runnerData.status === 'error') {
-               parsed.message += `\n\n[SYSTEM ERROR]: ${runnerData.msg}`;
-            } else if (runnerData.msg) {
-               parsed.message += `\n\n[SYSTEM SUCCESS]: ${runnerData.msg}`;
-            }
-          } catch (e) {
-            console.log("Local runner not responding", e);
-            parsed.message += `\n\n[SYSTEM ERROR]: Local runner not responding. Please make sure run_local.bat is running.`;
-          }
+            const executionResult = await actionExecutor.execute(parsed.command);
+            parsed.message += executionResult;
         }
       }
 
@@ -465,7 +402,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen w-full bg-sleek-bg font-sans overflow-hidden">
+    <div className="flex h-screen w-full bg-hud-bg font-sans overflow-hidden">
       {/* Settings Modal */}
       <AnimatePresence>
         {isSettingsOpen && (
@@ -473,39 +410,47 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm"
+            className="absolute inset-0 z-50 bg-black/90 flex items-center justify-center p-4 backdrop-blur-md"
           >
             <motion.div 
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
-              className="bg-sleek-surface border border-sleek-border w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl text-sleek-text"
+              className="bg-hud-panel border-2 border-hud-cyan/50 w-full max-w-lg rounded-xl overflow-hidden shadow-[0_0_50px_rgba(0,240,255,0.2)] text-hud-text relative"
             >
-              <div className="flex border-b border-sleek-border bg-sleek-card/50">
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-hud-cyan to-transparent opacity-50" />
+              
+              <div className="flex border-b border-hud-border bg-black/50">
                 <button 
                   onClick={() => setSettingsTab('api')}
-                  className={`flex-1 py-4 text-sm font-bold flex items-center justify-center gap-2 transition-all ${settingsTab === 'api' ? 'text-win-blue border-b-2 border-win-blue bg-win-blue/5' : 'text-sleek-dim hover:text-white'}`}
+                  className={`flex-1 py-4 text-[11px] uppercase tracking-widest font-mono font-bold flex items-center justify-center gap-2 transition-all ${settingsTab === 'api' ? 'text-hud-cyan border-b-2 border-hud-cyan bg-hud-cyan/10 shadow-[inset_0_-10px_20px_-10px_rgba(0,240,255,0.3)]' : 'text-hud-dim hover:text-hud-text'}`}
                 >
-                  <Monitor className="w-4 h-4" /> System API
+                  <Monitor className="w-4 h-4" /> System Core
                 </button>
                 <button 
                   onClick={() => setSettingsTab('memory')}
-                  className={`flex-1 py-4 text-sm font-bold flex items-center justify-center gap-2 transition-all ${settingsTab === 'memory' ? 'text-win-blue border-b-2 border-win-blue bg-win-blue/5' : 'text-sleek-dim hover:text-white'}`}
+                  className={`flex-1 py-4 text-[11px] uppercase tracking-widest font-mono font-bold flex items-center justify-center gap-2 transition-all ${settingsTab === 'memory' ? 'text-hud-cyan border-b-2 border-hud-cyan bg-hud-cyan/10 shadow-[inset_0_-10px_20px_-10px_rgba(0,240,255,0.3)]' : 'text-hud-dim hover:text-hud-text'}`}
                 >
-                  <Brain className="w-4 h-4" /> Agent Memory
+                  <Brain className="w-4 h-4" /> Memory
+                </button>
+                <button 
+                  onClick={() => setSettingsTab('sync')}
+                  className={`flex-1 py-4 text-[11px] uppercase tracking-widest font-mono font-bold flex items-center justify-center gap-2 transition-all ${settingsTab === 'sync' ? 'text-hud-cyan border-b-2 border-hud-cyan bg-hud-cyan/10 shadow-[inset_0_-10px_20px_-10px_rgba(0,240,255,0.3)]' : 'text-hud-dim hover:text-hud-text'}`}
+                >
+                  <Cloud className="w-4 h-4" /> OTA Sync
                 </button>
               </div>
 
               <div className="p-8">
                 {settingsTab === 'api' && (
                   <>
-                    <h3 className="text-xl font-bold text-win-blue mb-2 flex items-center gap-2">
+                    <h3 className="text-xl font-bold text-hud-cyan mb-2 flex items-center gap-2 uppercase tracking-wide text-shadow-cyan">
                        Intelligence Configuration
                     </h3>
-                    <p className="text-sm text-sleek-dim mb-6">Select your AI provider and configure your API keys.</p>
+                    <p className="text-xs font-mono text-hud-dim mb-6">DEFINE UPLINK PARAMETERS AND CORE NEURAL PROCESSOR.</p>
                     
-                    <form onSubmit={saveKey} className="space-y-4 max-h-[450px] overflow-y-auto pr-2 sleek-scroll">
+                    <form onSubmit={saveKey} className="space-y-4 max-h-[450px] overflow-y-auto pr-2 hud-scroll">
                       <div>
-                        <label className="text-[11px] uppercase text-sleek-dim font-bold mb-2 block">AI Provider</label>
+                        <label className="text-[10px] uppercase text-hud-dim font-bold mb-2 block tracking-widest font-mono">Neural Provider</label>
                         <div className="grid grid-cols-3 gap-2">
                           {[
                             { id: 'gemini', label: 'Gemini' },
@@ -517,12 +462,11 @@ export default function App() {
                               type="button"
                               onClick={() => {
                                 setProvider(p.id as any);
-                                // Default model suggestions based on provider
                                 if (p.id === 'gemini') setSelectedModel('gemini-3.1-flash-lite-preview');
                                 if (p.id === 'openai') setSelectedModel('gpt-4o-mini');
                                 if (p.id === 'anthropic') setSelectedModel('claude-3-5-sonnet-latest');
                               }}
-                              className={`py-2 text-[10px] uppercase font-bold rounded border transition-all ${provider === p.id ? 'bg-win-blue border-win-blue text-white' : 'border-sleek-border hover:border-sleek-dim text-sleek-dim'}`}
+                              className={`py-2 text-[10px] uppercase font-bold rounded border transition-all font-mono tracking-widest ${provider === p.id ? 'bg-hud-cyan/20 border-hud-cyan text-hud-cyan shadow-[0_0_10px_rgba(0,240,255,0.4)]' : 'border-hud-border hover:border-hud-cyan/50 text-hud-dim bg-hud-card'}`}
                             >
                               {p.label}
                             </button>
@@ -532,112 +476,112 @@ export default function App() {
 
                       {provider === 'gemini' && (
                         <div>
-                          <label className="text-[11px] uppercase text-sleek-dim font-bold mb-2 block">Gemini API Key</label>
+                          <label className="text-[10px] uppercase text-hud-dim font-bold mb-2 block tracking-widest font-mono">Gemini API Key</label>
                           <input 
                             type="password"
                             value={geminiKey}
                             onChange={(e) => setGeminiKey(e.target.value)}
                             placeholder="AQ.Ab8RN6..."
-                            className="w-full bg-sleek-card border border-sleek-border rounded-lg px-4 py-3 text-sm focus:border-win-blue focus:outline-none"
+                            className="w-full bg-black/40 border border-hud-border rounded-lg px-4 py-3 text-sm focus:border-hud-cyan focus:shadow-[0_0_10px_rgba(0,240,255,0.3)] focus:outline-none font-mono text-hud-cyan transition-all"
                           />
                         </div>
                       )}
 
                       {provider === 'openai' && (
                         <div>
-                          <label className="text-[11px] uppercase text-sleek-dim font-bold mb-2 block">OpenAI API Key</label>
+                          <label className="text-[10px] uppercase text-hud-dim font-bold mb-2 block tracking-widest font-mono">OpenAI API Key</label>
                           <input 
                             type="password"
                             value={openaiKey}
                             onChange={(e) => setOpenaiKey(e.target.value)}
                             placeholder="sk-..."
-                            className="w-full bg-sleek-card border border-sleek-border rounded-lg px-4 py-3 text-sm focus:border-win-blue focus:outline-none"
+                            className="w-full bg-black/40 border border-hud-border rounded-lg px-4 py-3 text-sm focus:border-hud-cyan focus:shadow-[0_0_10px_rgba(0,240,255,0.3)] focus:outline-none font-mono text-hud-cyan transition-all"
                           />
                         </div>
                       )}
 
                       {provider === 'anthropic' && (
                         <div>
-                          <label className="text-[11px] uppercase text-sleek-dim font-bold mb-2 block">Claude API Key</label>
+                          <label className="text-[10px] uppercase text-hud-dim font-bold mb-2 block tracking-widest font-mono">Claude API Key</label>
                           <input 
                             type="password"
                             value={anthropicKey}
                             onChange={(e) => setAnthropicKey(e.target.value)}
                             placeholder="sk-ant-..."
-                            className="w-full bg-sleek-card border border-sleek-border rounded-lg px-4 py-3 text-sm focus:border-win-blue focus:outline-none"
+                            className="w-full bg-black/40 border border-hud-border rounded-lg px-4 py-3 text-sm focus:border-hud-cyan focus:shadow-[0_0_10px_rgba(0,240,255,0.3)] focus:outline-none font-mono text-hud-cyan transition-all"
                           />
                         </div>
                       )}
 
                       <div>
-                        <label className="text-[11px] uppercase text-sleek-dim font-bold mb-2 block">AI Model Selection</label>
+                        <label className="text-[10px] uppercase text-hud-dim font-bold mb-2 block tracking-widest font-mono">Processor Core Selection</label>
                         <select 
                           value={selectedModel}
                           onChange={(e) => setSelectedModel(e.target.value)}
-                          className="w-full bg-sleek-card border border-sleek-border rounded-lg px-4 py-3 text-sm focus:border-win-blue focus:outline-none text-sleek-text appearance-none"
+                          className="w-full bg-black/40 border border-hud-border rounded-lg px-4 py-3 text-[12px] focus:border-hud-cyan focus:shadow-[0_0_10px_rgba(0,240,255,0.3)] focus:outline-none text-hud-text appearance-none font-mono tracking-wide transition-all"
                         >
                           {provider === 'gemini' && (
                             <>
-                              <option value="gemini-3.1-flash-lite-preview">3.1 Flash-Lite (Insanely Fast)</option>
-                              <option value="gemini-2.5-flash-8b">2.5 Flash-8B (Highest Limit)</option>
-                              <option value="gemini-2.5-flash">2.5 Flash (Balanced Default)</option>
-                              <option value="gemini-2.5-pro">2.5 Pro (Precision & Logic)</option>
+                              <option value="gemini-3.1-flash-lite-preview" className="bg-hud-bg text-hud-text">3.1 Flash-Lite (Insanely Fast)</option>
+                              <option value="gemini-2.5-flash-8b" className="bg-hud-bg text-hud-text">2.5 Flash-8B (Highest Limit)</option>
+                              <option value="gemini-2.5-flash" className="bg-hud-bg text-hud-text">2.5 Flash (Balanced Default)</option>
+                              <option value="gemini-2.5-pro" className="bg-hud-bg text-hud-text">2.5 Pro (Precision & Logic)</option>
                             </>
                           )}
                           {provider === 'openai' && (
                             <>
-                              <option value="gpt-4o-mini">GPT-4o Mini (Fast)</option>
-                              <option value="gpt-4o">GPT-4o (Premium)</option>
-                              <option value="o1-mini">o1 Mini (Logic)</option>
+                              <option value="gpt-4o-mini" className="bg-hud-bg text-hud-text">GPT-4o Mini (Fast)</option>
+                              <option value="gpt-4o" className="bg-hud-bg text-hud-text">GPT-4o (Premium)</option>
+                              <option value="o1-mini" className="bg-hud-bg text-hud-text">o1 Mini (Logic)</option>
                             </>
                           )}
                           {provider === 'anthropic' && (
                             <>
-                              <option value="claude-3-5-sonnet-latest">Claude 3.5 Sonnet</option>
-                              <option value="claude-3-5-haiku-latest">Claude 3.5 Haiku</option>
-                              <option value="claude-3-opus-latest">Claude 3 Opus</option>
+                              <option value="claude-3-5-sonnet-latest" className="bg-hud-bg text-hud-text">Claude 3.5 Sonnet</option>
+                              <option value="claude-3-5-haiku-latest" className="bg-hud-bg text-hud-text">Claude 3.5 Haiku</option>
+                              <option value="claude-3-opus-latest" className="bg-hud-bg text-hud-text">Claude 3 Opus</option>
                             </>
                           )}
                         </select>
                       </div>
 
-                      <div className="pt-4 border-t border-sleek-border/30">
-                        <label className="text-[11px] uppercase text-win-blue font-bold mb-4 block">Neural AI Voice (TTS)</label>
-                        <div className="flex items-center justify-between mb-4 bg-black/20 p-3 rounded-lg border border-sleek-border/50">
-                          <span className="text-sm">Enable Human-like AI Voice</span>
+                      <div className="pt-4 border-t border-hud-border/50">
+                        <label className="text-[10px] uppercase text-hud-dim font-bold mb-4 block tracking-widest font-mono">Neural Vocals (TTS)</label>
+                        <div className="flex items-center justify-between mb-4 bg-black/40 p-3 rounded-lg border border-hud-border/50">
+                          <span className="text-[11px] font-mono tracking-widest text-hud-text uppercase">Bypass System Voice</span>
                           <button 
                             type="button"
                             onClick={() => setIsAIVoiceEnabled(!isAIVoiceEnabled)}
-                            className={`w-10 h-5 rounded-full transition-all relative ${isAIVoiceEnabled ? 'bg-win-blue shadow-[0_0_8px_rgba(0,120,212,0.4)]' : 'bg-sleek-border'}`}
+                            className={`w-10 h-5 rounded-full transition-all relative ${isAIVoiceEnabled ? 'bg-hud-cyan shadow-[0_0_10px_rgba(0,240,255,0.4)]' : 'bg-hud-border'}`}
                           >
-                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isAIVoiceEnabled ? 'left-6' : 'left-1'}`} />
+                            <div className={`absolute top-1 w-3 h-3 rounded-full transition-all ${isAIVoiceEnabled ? 'left-6 bg-black' : 'left-1 bg-hud-dim'}`} />
                           </button>
                         </div>
 
                         {isAIVoiceEnabled && (
                           <div className="space-y-3">
-                            <label className="text-[10px] uppercase text-sleek-dim font-bold block">Select Personality</label>
+                            <label className="text-[10px] uppercase text-hud-dim font-bold block tracking-widest font-mono">Select Personality</label>
                             <select 
                               value={aiVoiceName}
                               onChange={(e) => setAiVoiceName(e.target.value)}
-                              className="w-full bg-sleek-card border border-sleek-border rounded-lg px-4 py-3 text-sm focus:border-win-blue focus:outline-none text-sleek-text appearance-none"
+                              className="w-full bg-black/40 border border-hud-border rounded-lg px-4 py-3 text-[12px] focus:border-hud-cyan focus:shadow-[0_0_10px_rgba(0,240,255,0.3)] focus:outline-none text-hud-text appearance-none font-mono tracking-wide transition-all"
                             >
-                              <option value="Kore">Kore (Balanced & Warm)</option>
-                              <option value="Puck">Puck (Cheerful & High-pitched)</option>
-                              <option value="Charon">Charon (Deep & Professional)</option>
-                              <option value="Fenrir">Fenrir (Mysterious & Robotic-Human)</option>
-                              <option value="Zephyr">Zephyr (Soft & Calm)</option>
+                              <option value="Kore" className="bg-hud-bg text-hud-text">Kore (Balanced & Warm)</option>
+                              <option value="Puck" className="bg-hud-bg text-hud-text">Puck (Cheerful & High-pitched)</option>
+                              <option value="Charon" className="bg-hud-bg text-hud-text">Charon (Deep & Professional)</option>
+                              <option value="Fenrir" className="bg-hud-bg text-hud-text">Fenrir (Mysterious & Robotic-Human)</option>
+                              <option value="Zephyr" className="bg-hud-bg text-hud-text">Zephyr (Soft & Calm)</option>
                             </select>
-                            <p className="text-[10px] text-sleek-dim italic leading-relaxed">
-                              *AI Voice uses Gemini TTS API Units. Fallback to System Voice if quota is low.
+                            <p className="text-[10px] text-hud-cyan/50 italic leading-relaxed font-mono mt-2">
+                              *VOICE PROCESSING REQUIRES TTS API UNITS.
                             </p>
                           </div>
                         )}
                       </div>
 
-                      <div className="pt-4 border-t border-sleek-border/30">
-                        <label className="text-[11px] uppercase text-win-blue font-bold mb-4 block">Local PC Bridge Token</label>
-                        <p className="text-[10px] text-sleek-dim mb-3">Copy the <strong className="text-white">Agent Token</strong> displayed in your Launcher's console window and paste it here, so the Web UI has permission to execute commands on your PC.</p>
+                      <div className="pt-4 border-t border-hud-border/50">
+                        <label className="text-[10px] uppercase text-hud-dim font-bold mb-3 block tracking-widest font-mono">Local Bridge Token</label>
+                        <p className="text-[10px] text-hud-cyan/70 mb-3 font-mono">AUTHORIZED TOKEN REQUIRED FOR SECURE UPLINK COMMAND EXECUTION.</p>
                         <div className="flex gap-2">
                           <input 
                             value={bridgeToken}
@@ -645,7 +589,7 @@ export default function App() {
                                setBridgeToken(e.target.value);
                                localStorage.setItem('WIN_AGENT_BRIDGE_TOKEN', e.target.value);
                             }}
-                            className="flex-1 bg-black/40 border border-win-blue/30 rounded-lg px-3 py-2 text-sm font-mono text-win-blue"
+                            className="flex-1 bg-black/40 border border-hud-cyan/30 rounded-lg px-3 py-2 text-sm font-mono text-hud-cyan focus:border-hud-cyan focus:shadow-[0_0_10px_rgba(0,240,255,0.3)] focus:outline-none transition-all"
                           />
                           <button 
                             type="button"
@@ -653,24 +597,24 @@ export default function App() {
                               navigator.clipboard.writeText(bridgeToken);
                               alert("Token copied!");
                             }}
-                            className="p-2 bg-win-blue/20 hover:bg-win-blue/40 text-win-blue rounded-lg transition-all"
+                            className="p-2 bg-hud-cyan/10 hover:bg-hud-cyan/30 text-hud-cyan rounded-lg border border-hud-cyan/30 flex items-center justify-center transition-all"
                           >
                             <Copy className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
 
-                      <div className="flex gap-3 pt-6 border-t border-sleek-border/30">
+                      <div className="flex gap-3 pt-6 border-t border-hud-border/50">
                         <button 
                           type="button"
                           onClick={() => setIsSettingsOpen(false)}
-                          className="flex-1 py-3 text-sm font-semibold text-sleek-dim hover:text-white transition-colors"
+                          className="flex-1 py-3 text-[11px] font-mono tracking-widest text-hud-dim hover:text-hud-text transition-colors uppercase border border-hud-border hover:border-hud-dim/50 rounded-lg"
                         >
-                          Cancel
+                          Abort
                         </button>
                         <button 
                           type="submit"
-                          className="flex-1 py-3 bg-win-blue text-white rounded-lg text-sm font-semibold hover:bg-win-blue/80 transition-all"
+                          className="flex-1 py-3 bg-hud-cyan text-black rounded-lg text-[11px] font-mono tracking-widest font-bold hover:shadow-[0_0_15px_rgba(0,240,255,0.6)] uppercase transition-all"
                         >
                           Save Config
                         </button>
@@ -681,20 +625,20 @@ export default function App() {
 
                 {settingsTab === 'memory' && (
                   <div className="flex flex-col gap-4">
-                    <h3 className="text-xl font-bold text-win-blue mb-2 flex items-center gap-2">
-                       Personalization
+                    <h3 className="text-xl font-bold text-hud-cyan mb-2 flex items-center gap-2 uppercase tracking-wide text-shadow-cyan">
+                       Neural Memory Bank
                     </h3>
-                    <p className="text-sm text-sleek-dim mb-4">This is what the agent has learned about you across sessions.</p>
+                    <p className="text-xs font-mono text-hud-dim mb-4">LONG-TERM PERSONALIZATION DATA CAPTURED IN CURRENT CYCLE.</p>
                     
-                    <div className="bg-sleek-card border border-sleek-border rounded-xl p-4 max-h-[250px] overflow-y-auto sleek-scroll">
+                    <div className="bg-black/40 border border-hud-border rounded-xl p-4 max-h-[250px] overflow-y-auto hud-scroll">
                       {Object.keys(memory).length === 0 ? (
-                        <div className="text-sm text-sleek-dim italic text-center py-6">The agent hasn't learned anything yet. Try talking to it!</div>
+                        <div className="text-[11px] text-hud-cyan/50 italic text-center py-6 font-mono tracking-widest">NO MEMORY BLOCKS ALLOCATED YET.</div>
                       ) : (
                         <div className="grid grid-cols-1 gap-2">
                           {Object.entries(memory).map(([key, value]) => (
-                            <div key={key} className="flex justify-between items-center bg-black/20 p-2 rounded border border-sleek-border/50">
-                              <span className="text-[11px] font-mono text-win-blue uppercase">{key}</span>
-                              <span className="text-[12px] text-sleek-text truncate max-w-[150px]">{String(value)}</span>
+                            <div key={key} className="flex justify-between items-center bg-hud-panel/30 p-2 rounded border border-hud-cyan/20">
+                              <span className="text-[10px] font-mono font-bold text-hud-cyan uppercase tracking-widest">{key}</span>
+                              <span className="text-[11px] font-mono text-hud-text truncate max-w-[150px]">{String(value)}</span>
                             </div>
                           ))}
                         </div>
@@ -704,49 +648,49 @@ export default function App() {
                     <div className="flex gap-3 pt-4" />
                     <button 
                       onClick={() => setIsSettingsOpen(false)}
-                      className="w-full py-3 text-sm font-semibold text-sleek-dim hover:text-white transition-colors"
+                      className="w-full py-3 text-[11px] font-mono tracking-widest text-hud-dim border border-hud-border hover:border-hud-cyan hover:text-hud-cyan transition-colors rounded-lg uppercase"
                     >
-                      Close Settings
+                      Close Matrix
                     </button>
                   </div>
                 )}
 
                 {settingsTab === 'sync' && (
                   <div className="space-y-6">
-                    <h3 className="text-xl font-bold text-win-blue mb-2 flex items-center gap-2">
+                    <h3 className="text-xl font-bold text-hud-cyan mb-2 flex items-center gap-2 uppercase tracking-wide text-shadow-cyan">
                        Direct OTA Sync
                     </h3>
-                    <p className="text-sm text-sleek-dim">
-                      Skip GitHub and sync JARVIS code directly from this browser context to your local PC.
+                    <p className="text-xs font-mono text-hud-dim mb-4">
+                      SKIP GITHUB AND SYNC DIRECTLY FROM CLOUD CONTEXT OVER RPC.
                     </p>
 
-                    <div className="bg-black/30 p-4 rounded-xl border border-sleek-border/50 space-y-4">
+                    <div className="bg-hud-panel/50 p-4 rounded-xl border border-hud-border space-y-4">
                       <div className="space-y-1">
-                        <label className="text-[10px] uppercase text-win-blue font-bold">Your Sync URL</label>
+                        <label className="text-[10px] uppercase text-hud-cyan font-bold tracking-widest font-mono">Your Sync URL</label>
                         <div className="flex gap-2">
                           <input 
                             readOnly
                             value={window.location.origin}
-                            className="flex-1 bg-sleek-card border border-sleek-border rounded-lg px-3 py-2 text-xs font-mono text-sleek-text"
+                            className="flex-1 bg-black/40 border border-hud-cyan/30 rounded-lg px-3 py-2 text-sm font-mono text-hud-cyan focus:outline-none"
                           />
                           <button 
                             onClick={() => {
                               navigator.clipboard.writeText(window.location.origin);
                               alert("URL Copied!");
                             }}
-                            className="p-2 bg-win-blue/20 hover:bg-win-blue/40 text-win-blue rounded-lg transition-all"
+                            className="p-2 bg-hud-cyan/10 hover:bg-hud-cyan/30 text-hud-cyan rounded-lg border border-hud-cyan/30 flex items-center justify-center transition-all"
                           >
                             <Copy className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
 
-                      <div className="p-3 bg-win-blue/5 border border-win-blue/20 rounded-lg">
-                        <p className="text-[11px] text-sleek-dim leading-relaxed">
-                          <strong className="text-win-blue">Instruction:</strong><br />
+                      <div className="p-3 bg-hud-cyan/5 border border-hud-cyan/20 rounded-lg">
+                        <p className="text-[11px] text-hud-dim leading-relaxed font-mono">
+                          <strong className="text-hud-cyan uppercase tracking-widest">Instruction:</strong><br />
                           1. Copy the URL above.<br />
-                          2. Run <code className="text-white">run_local.bat</code> on your PC.<br />
-                          3. Select <code className="text-white">y</code> for "Sync with AI Studio Cloud?".<br />
+                          2. Run <code className="text-hud-text">run_local.bat</code> on your PC.<br />
+                          3. Select <code className="text-hud-text">y</code> for "Sync with AI Studio Cloud?".<br />
                           4. Paste this URL when prompted.
                         </p>
                       </div>
@@ -755,9 +699,9 @@ export default function App() {
                     <div className="pt-4">
                        <button 
                         onClick={() => setIsSettingsOpen(false)}
-                        className="w-full py-3 text-sm font-semibold text-sleek-dim hover:text-white transition-colors"
+                        className="w-full py-3 text-[11px] font-mono tracking-widest text-hud-dim border border-hud-border hover:border-hud-cyan hover:text-hud-cyan transition-colors rounded-lg uppercase"
                       >
-                        Close Settings
+                        Close Matrix
                       </button>
                     </div>
                   </div>
@@ -768,113 +712,91 @@ export default function App() {
         )}
       </AnimatePresence>
       {/* Sidebar */}
-        <aside className="w-[280px] bg-sleek-surface border-r border-sleek-border p-6 flex flex-col gap-6">
-        <div className="flex items-center gap-2 text-lg font-bold text-sleek-blue tracking-tight">
-          <div className="w-4 h-4 bg-win-blue rounded-full shadow-[0_0_12px_rgba(0,120,212,0.6)]" />
-          JARVIS v{pkg.version}
+        <aside className="w-[280px] bg-hud-panel/40 backdrop-blur-md border-r border-hud-border p-6 flex flex-col gap-6">
+        <div className="flex items-center gap-2 text-xl font-bold text-hud-cyan tracking-widest font-mono uppercase">
+          <div className="w-4 h-4 bg-hud-cyan rounded-full shadow-[0_0_15px_rgba(0,240,255,0.8)] animate-pulse" />
+          JARVIS <span className="opacity-50 text-sm">v{pkg.version}</span>
         </div>
 
         <div className="space-y-4">
-          <div className="bg-sleek-card border border-sleek-border rounded-xl p-4">
-            <span className="text-[11px] uppercase text-sleek-dim tracking-wider mb-2 block font-semibold flex justify-between items-center">
-              <span>Local PC Bridge</span>
-              <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
-            </span>
-            <div className="text-sm flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-sleek-green indicator-glow' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'}`} />
-              {isConnected ? <span className="text-emerald-400">Online & Secured</span> : <span className="text-red-400">Offline</span>}
+          <div className="hud-panel p-4">
+            <span className="text-[10px] text-hud-dim tracking-widest mb-3 block font-mono uppercase border-b border-hud-border/50 pb-2">Uplink Status</span>
+            <div className="text-sm flex items-center gap-2 font-mono">
+              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-hud-green indicator-glow' : 'bg-hud-red indicator-glow-red'}`} />
+              {isConnected ? <span className="text-hud-green tracking-wide overflow-hidden text-ellipsis whitespace-nowrap">SECURE_LINK_ACTIVE</span> : <span className="text-hud-red tracking-wide">OFFLINE</span>}
             </div>
-            {!isConnected && <p className="text-[10px] text-red-400/80 mt-2 font-medium">Please start JARVIS launcher on your Windows PC to connect.</p>}
+            {!isConnected && <p className="text-[10px] text-hud-red/80 mt-3 font-mono">ERR: AWAITING LAUNCHER CONNECTION</p>}
           </div>
 
-          <div className="bg-sleek-card border border-sleek-border rounded-xl p-4">
-            <span className="text-[11px] uppercase text-sleek-dim tracking-wider mb-2 block font-semibold flex justify-between items-center">
-              Voice Mode
+          <div className="hud-panel p-4">
+            <span className="text-[10px] text-hud-dim tracking-widest mb-3 block font-mono uppercase border-b border-hud-border/50 pb-2 flex justify-between items-center">
+              Vocal Override
               <button 
                 onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
-                className={`w-8 h-4 rounded-full transition-all relative ${isVoiceEnabled ? 'bg-win-blue' : 'bg-sleek-border'}`}
+                className={`w-8 h-4 rounded-full transition-all relative ${isVoiceEnabled ? 'bg-hud-cyan shadow-[0_0_10px_rgba(0,240,255,0.4)]' : 'bg-hud-border'}`}
               >
-                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${isVoiceEnabled ? 'left-4.5' : 'left-0.5'}`} />
+                <div className={`absolute top-0.5 w-3 h-3 bg-black rounded-full transition-all ${isVoiceEnabled ? 'left-4.5' : 'left-0.5'}`} />
               </button>
             </span>
-            <div className="text-sm flex items-center gap-2">
-              {isVoiceEnabled ? <Volume2 className="w-4 h-4 text-win-blue" /> : <VolumeX className="w-4 h-4 text-sleek-dim" />}
-              {isVoiceEnabled ? 'Audio Feedback ON' : 'Audio Feedback OFF'}
+            <div className="text-[11px] font-mono tracking-wide flex items-center gap-2 text-hud-text">
+              {isVoiceEnabled ? <Volume2 className="w-4 h-4 text-hud-cyan" /> : <VolumeX className="w-4 h-4 text-hud-dim" />}
+              {isVoiceEnabled ? 'FEEDBACK: ENABLED' : 'FEEDBACK: MUTED'}
             </div>
           </div>
         </div>
 
         <div className="mt-4 flex flex-col gap-2">
-          <span className="text-[11px] uppercase text-sleek-dim tracking-wider mb-1 block font-semibold flex justify-between items-center">
-             Navigation
+          <span className="text-[10px] text-hud-dim tracking-widest mb-2 block font-mono uppercase flex justify-between items-center">
+             Subsystems
           </span>
           <button 
             onClick={() => setActiveTab('chat')}
-            className={`flex items-center gap-2 p-3 border rounded-xl transition-all text-sm font-medium ${activeTab === 'chat' ? 'bg-win-blue/10 border-win-blue text-win-blue shadow-[0_0_10px_rgba(0,120,212,0.15)]' : 'bg-sleek-card border-sleek-border text-sleek-text hover:border-sleek-border/80'}`}
+            className={`flex items-center gap-3 p-3 border rounded-lg transition-all text-[11px] font-mono tracking-widest uppercase ${activeTab === 'chat' ? 'bg-hud-cyan/10 border-hud-cyan text-hud-cyan shadow-[0_0_10px_rgba(0,240,255,0.15)]' : 'bg-hud-card border-hud-border text-hud-text hover:border-hud-cyan/50'}`}
           >
-            <Terminal className="w-4 h-4" /> Agent Chat
+            <Terminal className="w-4 h-4" /> Command Terminal
           </button>
           <button 
             onClick={() => setActiveTab('network')}
-            className={`flex items-center gap-2 p-3 border rounded-xl transition-all text-sm font-medium ${activeTab === 'network' ? 'bg-win-blue/10 border-win-blue text-win-blue shadow-[0_0_10px_rgba(0,120,212,0.15)]' : 'bg-sleek-card border-sleek-border text-sleek-text hover:border-sleek-border/80'}`}
+            className={`flex items-center gap-3 p-3 border rounded-lg transition-all text-[11px] font-mono tracking-widest uppercase ${activeTab === 'network' ? 'bg-hud-cyan/10 border-hud-cyan text-hud-cyan shadow-[0_0_10px_rgba(0,240,255,0.15)]' : 'bg-hud-card border-hud-border text-hud-text hover:border-hud-cyan/50'}`}
           >
-            <CommandIcon className="w-4 h-4" /> Network Control
+            <CommandIcon className="w-4 h-4" /> Firewall Telemetry
           </button>
         </div>
 
         <div className="mt-4 flex flex-col gap-3">
            <button 
             onClick={() => setIsSettingsOpen(true)}
-            className="flex items-center gap-2 p-3 bg-sleek-card hover:bg-sleek-blue/10 border border-sleek-border hover:border-win-blue rounded-xl transition-all text-[12px] text-sleek-dim hover:text-win-blue"
+            className="flex items-center gap-2 p-3 bg-hud-card hover:bg-hud-cyan/10 border border-hud-border hover:border-hud-cyan rounded-xl transition-all text-[12px] text-hud-dim hover:text-hud-cyan mt-auto mt-8"
           >
-            <Monitor className="w-4 h-4" /> Settings & API Key
+            <Monitor className="w-4 h-4" /> CONFIGURATION MATRIX
           </button>
-          <div className="p-3 bg-win-blue/5 border border-win-blue/20 rounded-xl">
-            <span className="text-[10px] text-win-blue font-bold uppercase block mb-1">Local Mode</span>
-            <p className="text-[11px] text-sleek-dim leading-relaxed">Download project to run natively on Windows.</p>
-          </div>
-        </div>
-
-        <div className="mt-auto bg-sleek-card border border-sleek-border rounded-xl p-4 flex flex-col gap-2">
-          <span className="text-[11px] uppercase text-sleek-dim tracking-wider mb-2 block font-semibold flex justify-between">
-            Activity History
-            <button onClick={() => setHistory([])} className="hover:text-red-400 transition-colors">
-              <RotateCcw className="w-3 h-3" />
-            </button>
-          </span>
-          <div className="flex flex-col gap-1 overflow-y-auto sleek-scroll max-h-[200px]">
-            {history.length === 0 ? (
-              <div className="text-[12px] text-sleek-dim italic">• No recent activity</div>
-            ) : (
-              history.filter(i => i.role === 'user').map(item => (
-                <div key={item.id} className="text-[12px] text-sleek-dim truncate">• {item.content}</div>
-              ))
-            )}
-          </div>
         </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col bg-linear-to-b from-[#121215] to-sleek-bg overflow-hidden">
+      <main className="flex-1 flex flex-col bg-transparent overflow-hidden">
         {activeTab === 'network' ? (
           <NetworkControl bridgeToken={bridgeToken} />
         ) : (
           <>
-            <header className="px-10 py-6 border-b border-sleek-border flex justify-between items-center">
+            <header className="px-10 py-6 border-b border-hud-border flex justify-between items-center bg-black/40 backdrop-blur-md">
               <div>
-                <h2 className="text-sm font-semibold text-sleek-text">Automation Bridge</h2>
-                <p className="text-[12px] text-sleek-dim">Live conversation with system agent</p>
+                <h2 className="text-sm font-semibold text-hud-text uppercase tracking-widest text-shadow-cyan">Your Assistant</h2>
+                <p className="text-[12px] text-hud-cyan/70 font-mono mt-1">SECURE ENCLAVE ACTIVE</p>
               </div>
-              <div className="text-[11px] opacity-50 font-mono tracking-tighter">AGENT_READY</div>
+              <div className="text-[11px] text-hud-green font-mono tracking-widest flex items-center gap-2">
+                 <div className="w-1.5 h-1.5 bg-hud-green rounded-full animate-pulse indicator-glow" />
+                 SYSTEM_READY
+              </div>
             </header>
 
             <section 
               ref={scrollRef}
-              className="flex-1 overflow-y-auto px-10 py-10 flex flex-col gap-6 sleek-scroll"
+              className="flex-1 overflow-y-auto px-10 py-10 flex flex-col gap-6 hud-scroll"
             >
               <AnimatePresence initial={false}>
                 {history.length === 0 && !loading && (
-                  <div className="h-full flex items-center justify-center text-sleek-dim text-sm italic opacity-50">
+                  <div className="h-full flex items-center justify-center text-hud-dim text-[11px] font-mono tracking-widest uppercase opacity-70">
                     Awaiting first command directive...
                   </div>
                 )}
@@ -886,26 +808,26 @@ export default function App() {
                     className={`flex flex-col ${item.role === 'user' ? 'items-end' : 'items-start'} gap-2`}
                   >
                     {item.role === 'user' ? (
-                      <div className="bg-win-blue text-white px-5 py-3 rounded-2xl rounded-tr-none text-sm max-w-[80%] shadow-lg">
+                      <div className="bg-hud-cyan/20 border border-hud-cyan/40 text-hud-cyan px-5 py-3 rounded-md text-[13px] font-mono tracking-wide max-w-[80%] shadow-[0_0_15px_rgba(0,240,255,0.15)]">
                         {item.content}
                       </div>
                     ) : (
                       <div className="flex flex-col gap-3 max-w-[85%]">
-                        <div className="bg-sleek-card border border-sleek-border text-sleek-text px-5 py-4 rounded-2xl rounded-tl-none text-sm leading-relaxed shadow-sm">
+                        <div className="hud-panel px-5 py-4 text-[13px] leading-relaxed border-l-2 border-l-hud-cyan">
                           {item.content}
                         </div>
                         {item.metadata?.command && (
-                          <div className="bg-black/40 border border-sleek-border rounded-lg p-3 font-mono text-[11px] text-[#9cdcfe] group relative">
-                            <div className="text-[10px] text-win-blue font-bold mb-2 flex justify-between items-center">
-                              <span>EXECUTING COMMAND</span>
+                          <div className="bg-black/60 border border-hud-border rounded-md p-3 font-mono text-[11px] text-hud-cyan group relative overflow-x-auto hud-scroll">
+                            <div className="text-[10px] text-hud-dim font-bold uppercase tracking-widest mb-2 flex justify-between items-center border-b border-hud-border/50 pb-2">
+                              <span><Cpu className="w-3 h-3 inline mr-1 text-hud-cyan" /> EXECUTING ROUTINE</span>
                               <button 
                                 onClick={() => navigator.clipboard.writeText(JSON.stringify(item.metadata?.command, null, 2))}
-                                className="text-text-dim hover:text-white transition-colors"
+                                className="text-hud-dim hover:text-hud-text transition-colors"
                               >
                                 <Copy className="w-3 h-3" />
                               </button>
                             </div>
-                            <pre className="whitespace-pre-wrap">
+                            <pre className="whitespace-pre-wrap text-shadow-cyan opacity-90">
                               {JSON.stringify(item.metadata.command, null, 2)}
                             </pre>
                           </div>
@@ -917,41 +839,41 @@ export default function App() {
                 {loading && (
                   <motion.div 
                     initial={{ opacity: 1 }}
-                    className="flex items-center gap-2 text-win-blue animate-pulse"
+                    className="flex flex-row-reverse items-center gap-2 self-start bg-hud-cyan/10 border border-hud-cyan/20 px-4 py-2 rounded-md font-mono"
                   >
-                    <div className="w-1.5 h-1.5 bg-win-blue rounded-full animate-bounce" style={{ animationDelay: '0s' }} />
-                    <div className="w-1.5 h-1.5 bg-win-blue rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
-                    <div className="w-1.5 h-1.5 bg-win-blue rounded-full animate-bounce" style={{ animationDelay: '0.4s' }} />
-                    <span className="text-xs font-bold uppercase tracking-widest ml-2">Agent is thinking</span>
+                    <div className="w-1.5 h-1.5 bg-hud-cyan rounded-full animate-bounce shadow-[0_0_8px_rgba(0,240,255,0.8)]" style={{ animationDelay: '0.4s' }} />
+                    <div className="w-1.5 h-1.5 bg-hud-cyan rounded-full animate-bounce shadow-[0_0_8px_rgba(0,240,255,0.8)]" style={{ animationDelay: '0.2s' }} />
+                    <div className="w-1.5 h-1.5 bg-hud-cyan rounded-full animate-bounce shadow-[0_0_8px_rgba(0,240,255,0.8)]" style={{ animationDelay: '0s' }} />
+                    <span className="text-[10px] font-bold uppercase tracking-widest mr-2 text-hud-cyan">PROCESSING UPLINK</span>
                   </motion.div>
                 )}
               </AnimatePresence>
             </section>
 
-            <div className="px-10 py-8 bg-sleek-surface border-t border-sleek-border">
-              <form onSubmit={handleSubmit} className="relative">
+            <div className="px-10 py-8 bg-black/40 backdrop-blur-md border-t border-hud-cyan/20">
+              <form onSubmit={handleSubmit} className="relative max-w-4xl mx-auto">
                 <input
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Talk to your Windows Agent..."
-                  className="w-full bg-sleek-card border border-sleek-blue px-6 py-4 rounded-[30px] text-sleek-text focus:outline-none focus:ring-1 focus:ring-sleek-blue/50 placeholder:text-sleek-dim pr-28"
+                  placeholder="Enter prompt directive..."
+                  className="w-full bg-hud-card border border-hud-cyan/50 px-6 py-4 rounded-md text-hud-text font-mono focus:outline-none focus:border-hud-cyan focus:shadow-[0_0_15px_rgba(0,240,255,0.3)] placeholder:text-hud-dim/50 pr-28 transition-all"
                 />
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-3">
                   <button 
                     type="button"
                     onClick={toggleListening}
-                    className={`p-2 transition-all rounded-full ${isListening ? 'bg-red-500/20 text-red-500 animate-pulse' : 'text-sleek-dim hover:text-win-blue hover:bg-win-blue/10'}`}
+                    className={`p-2 transition-all rounded-md ${isListening ? 'bg-hud-red/20 text-hud-red border border-hud-red/50 shadow-[0_0_10px_rgba(255,0,60,0.5)] animate-pulse' : 'text-hud-dim hover:text-hud-cyan hover:bg-hud-cyan/10'}`}
                   >
-                    {isListening ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+                    {isListening ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
                   </button>
                   <button 
                     id="submit-prompt"
                     type="submit"
                     disabled={!input.trim() || loading}
-                    className="p-2 text-sleek-blue hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                    className="p-2 bg-hud-cyan text-black hover:shadow-[0_0_15px_rgba(0,240,255,0.8)] rounded-md disabled:opacity-30 disabled:pointer-events-none transition-all"
                   >
-                    <Send className="w-5 h-5" />
+                    <Send className="w-4 h-4" />
                   </button>
                 </div>
               </form>

@@ -6,20 +6,21 @@ export type CommandAction =
   | "run_command" 
   | "system_control" 
   | "file_operation"
-  | "update_memory"
-  | "رفض";
+  | "update_memory";
 
 export interface UserMemory {
   [key: string]: any;
 }
 
+export interface ParsedCommand {
+  action: CommandAction;
+  params: any;
+  reason?: string;
+}
+
 export interface CommandResponse {
   message: string;
-  command?: {
-    action: CommandAction;
-    params?: any;
-    reason?: string;
-  };
+  command?: ParsedCommand;
 }
 
 export interface HistoryItem {

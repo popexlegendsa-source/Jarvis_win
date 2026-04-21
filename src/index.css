@@ -1,38 +1,63 @@
 @import "tailwindcss";
 
 @theme {
-  --color-sleek-bg: #0a0a0c;
-  --color-sleek-surface: #1c1c1f;
-  --color-sleek-card: #252529;
-  --color-sleek-blue: #0078d4;
-  --color-sleek-green: #2ecc71;
-  --color-sleek-text: #e2e2e6;
-  --color-sleek-dim: #a1a1aa;
-  --color-sleek-border: #333338;
+  --color-hud-bg: #02040a;
+  --color-hud-panel: #070b14;
+  --color-hud-card: #0b1325;
+  --color-hud-cyan: #00f0ff;
+  --color-hud-blue: #0353a4;
+  --color-hud-green: #39ff14;
+  --color-hud-red: #ff003c;
+  --color-hud-text: #eaffff;
+  --color-hud-dim: #5c8b99;
+  --color-hud-border: #0a334a;
   
-  --font-sans: "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-mono: "Consolas", "Monaco", monospace;
+  --font-sans: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Consolas", monospace;
 }
 
 @layer base {
   body {
-    background-color: #0a0a0c;
-    color: #e2e2e6;
-    @apply font-sans selection:bg-sleek-blue/30;
+    background-color: var(--color-hud-bg);
+    color: var(--color-hud-text);
+    background-image: 
+      radial-gradient(circle at 50% 0%, rgba(0, 240, 255, 0.05) 0%, transparent 40%),
+      linear-gradient(rgba(10, 51, 74, 0.1) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(10, 51, 74, 0.1) 1px, transparent 1px);
+    background-size: 100% 100%, 40px 40px, 40px 40px;
+    background-attachment: fixed;
+    @apply font-sans selection:bg-hud-cyan/30;
   }
 }
 
-.sleek-scroll::-webkit-scrollbar {
+.hud-scroll::-webkit-scrollbar {
   width: 4px;
 }
-.sleek-scroll::-webkit-scrollbar-track {
+.hud-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
-.sleek-scroll::-webkit-scrollbar-thumb {
-  background: var(--color-border-sleek);
+.hud-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-hud-cyan);
   border-radius: 10px;
+  box-shadow: 0 0 10px var(--color-hud-cyan);
 }
 
 .indicator-glow {
-  box-shadow: 0 0 8px var(--color-accent-green);
+  box-shadow: 0 0 12px var(--color-hud-green);
+}
+.indicator-glow-red {
+  box-shadow: 0 0 12px var(--color-hud-red);
+}
+
+.hud-panel {
+  @apply bg-hud-panel/80 backdrop-blur-xl border border-hud-border border-t-hud-cyan/30 shadow-[0_4px_30px_rgba(0,0,0,0.5)] rounded-lg relative overflow-hidden;
+}
+
+.hud-panel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-hud-cyan), transparent);
+  opacity: 0.5;
 }

@@ -1,6 +1,6 @@
 {
   "name": "Jarvis",
   "description": "Your personal AI assistant for Windows automation, inspired by Tony Stark's legendary interface. Control your PC with natural language, voice, and intelligent multi-model support.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["microphone"],
   "majorCapabilities": []
 }
