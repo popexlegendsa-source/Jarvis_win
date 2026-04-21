@@ -1,7 +1,7 @@
 {
   "name": "win-automate-agent",
   "private": true,
-  "version": "2.9.7",
+  "version": "2.11.2",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",

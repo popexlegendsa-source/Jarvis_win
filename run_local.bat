@@ -1,6 +1,17 @@
 @echo off
 setlocal enabledelayedexpansion
-title JARVIS - Personal Assistant v2.9.7
+
+:: --- ADMIN PRIVILEGES CHECK ---
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+    set IS_ADMIN=NO
+) else (
+    set IS_ADMIN=YES
+)
+
+cd /d "%~dp0"
+
+title JARVIS - Personal Assistant v2.11.2
 
 echo.
 echo    __  ___  ____  _  _  ____  ____
@@ -8,6 +19,17 @@ echo   (  )/ __)(  _ \( \/ )(_  _)/ ___)
 echo    ) \\__ \ )   / \  /  _)(_ \___ \
 echo   (__)(___/(__\_)  \/  (____)(____/
 echo.
+
+if "!IS_ADMIN!"=="NO" (
+    echo [!] NOTICE: JARVIS is running in Standard Mode.
+    echo [!] To use Network Firewall commands, please close this window, 
+    echo [!] right-click 'run_local.bat' and select "Run as Administrator".
+    echo.
+) else (
+    echo [i] JARVIS is running with Administrator privileges!
+    echo.
+)
+
 echo [JARVIS] Initializing Environment...
 echo --------------------------------------------------
 
@@ -75,23 +97,7 @@ set agent_token=!agent_token: =!
 :: (Здесь идет оригинальный код проверки Git/Node/Python из v2.7.2)
 
 :: 2.1 ПРОВЕРКА GIT И АВТО-ОБНОВЛЕНИЕ
-git --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [!] Git not found. Skip Git checks.
-) else (
-    echo [1/5] Syncing with Private GitHub Repository...
-    if not exist .git (
-        echo [JARVIS] Initializing Git link...
-        git init
-        git remote add origin https://github.com/popexlegendsa-source/Jarvis_win.git
-        git branch -M main
-    ) else (
-        git remote set-url origin https://github.com/popexlegendsa-source/Jarvis_win.git
-    )
-    
-    :: Стягиваем изменения. Так как репо приватный, Git сам вызовет окно авторизации (Credential Manager)
-    git pull origin main
-)
+:: [REMOVED BY USER REQUEST - Git auto-sync disabled to prevent overwriting manual ZIP downloads]
 
 :: 1.3 ПРОВЕРКА NODE.JS
 node -v >nul 2>&1

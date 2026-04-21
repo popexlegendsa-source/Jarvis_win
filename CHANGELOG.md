@@ -1,5 +1,34 @@
 # Changelog - JARVIS Agent
 
+## [2.11.2] - 2026-04-18
+### Removed
+- **Forced UAC Auto-Elevation**: Removed the hardcoded UAC elevation script that caused `run_local.bat` to fail silently on some PCs due to strict Windows execution policies. 
+### Changed
+- **Graceful Admin Checks**: The bash script now perfectly opens in Standard Mode so you never experience crashes. It dynamically displays an alert in the console: if you want to use the Network/Firewall features, you simply close the window and manually *Right-Click -> Run as Administrator*. This guarantees 100% stable startup everywhere.
+
+## [2.11.1] - 2026-04-18
+### Fixed
+- **UAC Elevation Crash (Working Directory Bug)**: Fixed a classic Windows UAC bug in `run_local.bat` where elevating permissions caused the new window to launch inside `C:\Windows\System32`. This resulted in the script instantly closing because it couldn't find its files. Added `cd /d "%~dp0"` and robust argument escaping to ensure the admin window stays in your JARVIS folder.
+
+## [2.11.0] - 2026-04-18
+### Added
+- **Network Filter Command**: Added a brand new native Python action `network_filter`. This allows JARVIS to scan `Get-NetTCPConnection` to list all actively internet-connected applications, and use Windows Defender Firewall rules (`New-NetFirewallRule` / `Remove-NetFirewallRule`) to instantly block or unblock the network access of any specific executable file path or process name.
+- **Auto-Elevation**: Modified `run_local.bat` to automatically check for Administrator privileges. If it is run as a basic user, it automatically uses PowerShell's `Start-Process -Verb RunAs` command to pop a UAC elevation prompt, ensuring the Python backend has full administrative capability over the operating system, which is strictly required for managing Firewall rules.
+
+## [2.10.0] - 2026-04-18
+### Fixed
+- **Bridge Token Mismatch Issue**: Solved a critical UX flaw where the frontend UI generated an unchangeable Bridge Token, causing an `[SYSTEM ERROR]: Unauthorized. Invalid Token.` error if the user typed their own custom token into the local console prompt (after clearing their `.agent_token` document). 
+- **Editable Token**: The "Local PC Bridge Token" input box in the Web UI Settings is now fully editable. Users can either copy the UI's code into `run_local.bat` or type their custom console PIN directly into the UI to instantly sync them.
+
+## [2.9.9] - 2026-04-18
+### Removed
+- **Git Auto-Sync Disabled**: Per user request, the `git pull` logic inside `run_local.bat` has been entirely removed. This was causing a critical issue where the local runner was aggressively reverting the user's manual ZIP updates from AI Studio by pulling older code from the remote repository. Removing this ensures that whatever is extracted from the downloaded ZIP is exactly what runs.
+
+## [2.9.8] - 2026-04-18
+### Fixed
+- **Completely Fixed 'Nothing Happens' Bug**: Removed the highly buggy `start` wrapper which caused visible execution to completely fail to launch if the system didn't interpret string formats perfectly. Replaced it with Python's native `CREATE_NEW_CONSOLE = 0x00000010` process flag. Now, execution directly spawns a clean, detached PowerShell window exactly as intended, physically skipping command line parsing completely. 
+- **Frontend Feedback Loop**: Added `await` to the API bridge inside the Web UI. Previously, if the Python runner encountered a system error, it printed it to the local console but the Web UI displayed success. Now, if Python encounters **any** errors parsing local files or throwing exceptions, it literally injects `[SYSTEM ERROR]: <reason>` directly into JARVIS's chat response, eliminating the "nothing happened" black box forever.
+
 ## [2.9.7] - 2026-04-18
 ### Changed
 - **Restored Visible Command Execution**: Based on user feedback ("you used to at least run commands, but now it's absolute nothing"), the hidden background execution for PowerShell commands was reverted. However, to solve the original parsing bugs, the commands are now physically saved into a temporary `.ps1` (PowerShell script) file in the `%TEMP%` directory before execution. This completely eliminates all escaping/quoting hell from Python while restoring the satisfying visual feedback of a popping-up console window. The window will auto-close on success or deliberately pause if an error occurs so the user can read the output!

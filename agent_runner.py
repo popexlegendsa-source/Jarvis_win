@@ -48,7 +48,45 @@ def countdown_warning(action_name):
 
 @app.route('/ping', methods=['GET'])
 def ping():
-    return jsonify({"status": "connected", "version": "2.9.7", "secure": SECURITY_TOKEN is not None})
+    return jsonify({"status": "connected", "version": "2.11.2", "secure": SECURITY_TOKEN is not None})
+
+@app.route('/network/connections', methods=['GET'])
+def network_connections():
+    # --- PROOF OF AUTHENTICATION ---
+    if SECURITY_TOKEN:
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return jsonify({"status": "error", "msg": "Unauthorized. Missing Token."}), 401
+        token = auth_header.split(" ")[1]
+        if token != SECURITY_TOKEN:
+            return jsonify({"status": "error", "msg": "Unauthorized. Invalid Token."}), 401
+
+    ps_script = """
+    $conns = Get-NetTCPConnection -State Established -ErrorAction SilentlyContinue
+    $results = @()
+    foreach ($c in $conns) {
+        $proc = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue
+        $results += [PSCustomObject]@{
+            ProcessName = if ($proc) { $proc.ProcessName } else { "Unknown" }
+            PID = $c.OwningProcess
+            LocalAddress = $c.LocalAddress
+            LocalPort = $c.LocalPort
+            RemoteAddress = $c.RemoteAddress
+            RemotePort = $c.RemotePort
+            Path = if ($proc) { $proc.Path } else { "" }
+        }
+    }
+    $results | Select-Object -Unique ProcessName, PID, RemoteAddress, RemotePort, Path | ConvertTo-Json -Compress
+    """
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True)
+        import json
+        data = json.loads(out.stdout) if out.stdout.strip() else []
+        if not isinstance(data, list):
+            data = [data]
+        return jsonify({"status": "success", "connections": data})
+    except Exception as e:
+        return jsonify({"status": "error", "msg": str(e)}), 500
 
 @app.route('/execute', methods=['POST'])
 def execute():
@@ -82,12 +120,13 @@ def execute():
                 script_path = os.path.join(tempfile.gettempdir(), f"jarvis_cmd_{uuid.uuid4().hex}.ps1")
                 with open(script_path, "w", encoding="utf-8-sig") as f:
                     f.write(cmd + "\n")
-                    # Если ошибка - зависаем, чтоб юзер прочитал. Если успех - ждем 2с и закрываемся.
                     f.write("if (!$?) { Write-Host '--- Error Executing Command ---' -ForegroundColor Red; Read-Host 'Press Enter to close' }\n")
                     f.write("else { Start-Sleep -Seconds 2 }")
                 
-                # Запускаем в ВИДИМОМ окне (как раньше), чтобы юзер понимал, что процесс идет
-                subprocess.Popen(f'start powershell -NoProfile -ExecutionPolicy Bypass -File "{script_path}"', shell=True)
+                # NATIVE Windows popup console (bypasses CMD entirely, opens raw Powershell window)
+                CREATE_NEW_CONSOLE = 0x00000010
+                subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script_path], creationflags=CREATE_NEW_CONSOLE)
+                
                 return jsonify({"status": "success", "msg": "Command launched in a visible PowerShell window."})
             except Exception as e:
                 return jsonify({"status": "error", "msg": str(e)})
@@ -130,6 +169,51 @@ def execute():
                         return jsonify({"status": "success", "content": f.read()})
                 return jsonify({"status": "error", "msg": "File not found"}), 404
 
+        elif action == 'network_filter':
+            net_action = params.get('net_action')
+            process_identifier = params.get('process_info', '') # Can be path or name
+            
+            if net_action == 'list_active':
+                ps_script = "(Get-NetTCPConnection -State Established).OwningProcess | Select-Object -Unique | ForEach-Object { try { (Get-Process -Id $_ -ErrorAction Stop).Path } catch { } } | Where-Object { $_ -ne $null }"
+                out = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True)
+                return jsonify({"status": "success", "msg": "Active network processes:\n" + out.stdout.strip()})
+                
+            elif net_action == 'block':
+                if not process_identifier:
+                    return jsonify({"status": "error", "msg": "process_info is required for blocking"})
+                    
+                path = process_identifier
+                # If it's just a name (e.g. chrome, chrome.exe), try to resolve it
+                if "\\" not in path:
+                    name = path.replace('.exe', '')
+                    ps_script = f"(Get-Process -Name '{name}' -ErrorAction SilentlyContinue).Path | Select-Object -First 1"
+                    out = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True)
+                    resolved_path = out.stdout.strip()
+                    if resolved_path: path = resolved_path
+                
+                if "\\" not in path:
+                    return jsonify({"status": "error", "msg": f"Could not determine full path for {process_identifier}."})
+                    
+                rule_name = f"JARVIS_BLOCK_{os.path.basename(path)}"
+                # Needs Admin. Assuming run_local.bat requested Admin.
+                ps_script = f"New-NetFirewallRule -DisplayName '{rule_name}' -Direction Outbound -Program '{path}' -Action Block; New-NetFirewallRule -DisplayName '{rule_name}' -Direction Inbound -Program '{path}' -Action Block"
+                out = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True)
+                
+                if out.returncode == 0:
+                    return jsonify({"status": "success", "msg": f"Success: Blocked internet access for {path}"})
+                else:
+                    return jsonify({"status": "error", "msg": f"Failed to block (Ensure JARVIS is running as Administrator): {out.stderr}"})
+            
+            elif net_action == 'unblock':
+                if not process_identifier:
+                    return jsonify({"status": "error", "msg": "process_info is required for unblocking"})
+                
+                base_name = os.path.basename(process_identifier)
+                rule_name = f"JARVIS_BLOCK_{base_name}"
+                ps_script = f"Remove-NetFirewallRule -DisplayName '{rule_name}' -ErrorAction SilentlyContinue"
+                subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True)
+                return jsonify({"status": "success", "msg": f"Success: Unblocked internet access for JARVIS_BLOCK_{base_name}"})
+
         # --- Ввод (Клавиатура/Мышь) ---
         elif action == 'press_keys':
             if not pyautogui: return jsonify({"status": "error", "msg": "PyAutoGUI not installed"}), 500
@@ -152,7 +236,7 @@ def execute():
         return jsonify({"status": "error", "msg": str(e)}), 500
 
 if __name__ == '__main__':
-    print("--- JARVIS Automation Runner v2.9.7 ---")
+    print("--- JARVIS Automation Runner v2.11.2 ---")
     if SECURITY_TOKEN:
         print("[SECURE MODE] Local runner locked with Access Token.")
     else:

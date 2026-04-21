@@ -43,16 +43,20 @@ Available commands:
 2. open_url {"url": string}
 3. type_text {"text": string}
 4. press_keys {"keys": string}
-5. run_command {"cmd": string} - EXECUTED IN POWERSHELL. Use PS syntax (e.g. Remove-Item, $env:USERPROFILE).
+5. run_command {"cmd": string} - EXECUTED IN POWERSHELL. Use PS syntax.
 6. system_control {"action": "shutdown|restart|sleep"}
-7. file_operation {"operation": "create|delete|read", "path": string} (Supports Python glob wildcards)
-8. update_memory {"key": string, "value": any} - Use this to remember things about the user (e.g. name, preferences).
+7. file_operation {"operation": "create|delete|read", "path": string} (Supports glob)
+8. update_memory {"key": string, "value": any}
+9. network_filter {"net_action": "list_active|block|unblock", "process_info": string} - Use to find/block/unblock app network access.
 
 Return ONLY the JSON object.`;
 
 import pkg from '../package.json';
 
+import { NetworkControl } from './NetworkControl';
+
 export default function App() {
+  const [activeTab, setActiveTab] = useState<'chat' | 'network'>('chat');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>(() => {
@@ -399,17 +403,25 @@ export default function App() {
           }
         } else {
           try {
-            fetch('http://127.0.0.1:5000/execute', {
+            const runnerRes = await fetch('http://127.0.0.1:5000/execute', {
               method: 'POST',
               headers: { 
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${bridgeToken}`
               },
               body: JSON.stringify(parsed.command)
-            }).catch(() => {
-              console.log("Local runner not responding (this is expected if not running locally)");
             });
-          } catch (e) {}
+            const runnerData = await runnerRes.json();
+            
+            if (runnerData.status === 'error') {
+               parsed.message += `\n\n[SYSTEM ERROR]: ${runnerData.msg}`;
+            } else if (runnerData.msg) {
+               parsed.message += `\n\n[SYSTEM SUCCESS]: ${runnerData.msg}`;
+            }
+          } catch (e) {
+            console.log("Local runner not responding", e);
+            parsed.message += `\n\n[SYSTEM ERROR]: Local runner not responding. Please make sure run_local.bat is running.`;
+          }
         }
       }
 
@@ -631,11 +643,14 @@ export default function App() {
 
                       <div className="pt-4 border-t border-sleek-border/30">
                         <label className="text-[11px] uppercase text-win-blue font-bold mb-4 block">Local PC Bridge Token</label>
-                        <p className="text-[10px] text-sleek-dim mb-3">Copy this Token and enter it in your command prompt when JARVIS asks. This protects your PC from unauthorized remote executions.</p>
+                        <p className="text-[10px] text-sleek-dim mb-3">Copy this into your command prompt when JARVIS asks. OR, if you already typed a PIN into your local prompt, type it here so they match!</p>
                         <div className="flex gap-2">
                           <input 
-                            readOnly
                             value={bridgeToken}
+                            onChange={(e) => {
+                               setBridgeToken(e.target.value);
+                               localStorage.setItem('WIN_AGENT_BRIDGE_TOKEN', e.target.value);
+                            }}
                             className="flex-1 bg-black/40 border border-win-blue/30 rounded-lg px-3 py-2 text-sm font-mono text-win-blue"
                           />
                           <button 
@@ -792,7 +807,25 @@ export default function App() {
           </div>
         </div>
 
-        <div className="mt-8 flex flex-col gap-3">
+        <div className="mt-4 flex flex-col gap-2">
+          <span className="text-[11px] uppercase text-sleek-dim tracking-wider mb-1 block font-semibold flex justify-between items-center">
+             Navigation
+          </span>
+          <button 
+            onClick={() => setActiveTab('chat')}
+            className={`flex items-center gap-2 p-3 border rounded-xl transition-all text-sm font-medium ${activeTab === 'chat' ? 'bg-win-blue/10 border-win-blue text-win-blue shadow-[0_0_10px_rgba(0,120,212,0.15)]' : 'bg-sleek-card border-sleek-border text-sleek-text hover:border-sleek-border/80'}`}
+          >
+            <Terminal className="w-4 h-4" /> Agent Chat
+          </button>
+          <button 
+            onClick={() => setActiveTab('network')}
+            className={`flex items-center gap-2 p-3 border rounded-xl transition-all text-sm font-medium ${activeTab === 'network' ? 'bg-win-blue/10 border-win-blue text-win-blue shadow-[0_0_10px_rgba(0,120,212,0.15)]' : 'bg-sleek-card border-sleek-border text-sleek-text hover:border-sleek-border/80'}`}
+          >
+            <CommandIcon className="w-4 h-4" /> Network Control
+          </button>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3">
            <button 
             onClick={() => setIsSettingsOpen(true)}
             className="flex items-center gap-2 p-3 bg-sleek-card hover:bg-sleek-blue/10 border border-sleek-border hover:border-win-blue rounded-xl transition-all text-[12px] text-sleek-dim hover:text-win-blue"
@@ -825,103 +858,109 @@ export default function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col bg-linear-to-b from-[#121215] to-sleek-bg">
-        <header className="px-10 py-6 border-b border-sleek-border flex justify-between items-center">
-          <div>
-            <h2 className="text-sm font-semibold text-sleek-text">Automation Bridge</h2>
-            <p className="text-[12px] text-sleek-dim">Live conversation with system agent</p>
-          </div>
-          <div className="text-[11px] opacity-50 font-mono tracking-tighter">AGENT_READY</div>
-        </header>
-
-        <section 
-          ref={scrollRef}
-          className="flex-1 overflow-y-auto px-10 py-10 flex flex-col gap-6 sleek-scroll"
-        >
-          <AnimatePresence initial={false}>
-            {history.length === 0 && !loading && (
-              <div className="h-full flex items-center justify-center text-sleek-dim text-sm italic opacity-50">
-                Awaiting first command directive...
+      <main className="flex-1 flex flex-col bg-linear-to-b from-[#121215] to-sleek-bg overflow-hidden">
+        {activeTab === 'network' ? (
+          <NetworkControl bridgeToken={bridgeToken} />
+        ) : (
+          <>
+            <header className="px-10 py-6 border-b border-sleek-border flex justify-between items-center">
+              <div>
+                <h2 className="text-sm font-semibold text-sleek-text">Automation Bridge</h2>
+                <p className="text-[12px] text-sleek-dim">Live conversation with system agent</p>
               </div>
-            )}
-            {history.map((item) => (
-              <motion.div 
-                key={item.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={`flex flex-col ${item.role === 'user' ? 'items-end' : 'items-start'} gap-2`}
-              >
-                {item.role === 'user' ? (
-                  <div className="bg-win-blue text-white px-5 py-3 rounded-2xl rounded-tr-none text-sm max-w-[80%] shadow-lg">
-                    {item.content}
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-3 max-w-[85%]">
-                    <div className="bg-sleek-card border border-sleek-border text-sleek-text px-5 py-4 rounded-2xl rounded-tl-none text-sm leading-relaxed shadow-sm">
-                      {item.content}
-                    </div>
-                    {item.metadata?.command && (
-                      <div className="bg-black/40 border border-sleek-border rounded-lg p-3 font-mono text-[11px] text-[#9cdcfe] group relative">
-                        <div className="text-[10px] text-win-blue font-bold mb-2 flex justify-between items-center">
-                          <span>EXECUTING COMMAND</span>
-                          <button 
-                            onClick={() => navigator.clipboard.writeText(JSON.stringify(item.metadata?.command, null, 2))}
-                            className="text-text-dim hover:text-white transition-colors"
-                          >
-                            <Copy className="w-3 h-3" />
-                          </button>
-                        </div>
-                        <pre className="whitespace-pre-wrap">
-                          {JSON.stringify(item.metadata.command, null, 2)}
-                        </pre>
-                      </div>
-                    )}
+              <div className="text-[11px] opacity-50 font-mono tracking-tighter">AGENT_READY</div>
+            </header>
+
+            <section 
+              ref={scrollRef}
+              className="flex-1 overflow-y-auto px-10 py-10 flex flex-col gap-6 sleek-scroll"
+            >
+              <AnimatePresence initial={false}>
+                {history.length === 0 && !loading && (
+                  <div className="h-full flex items-center justify-center text-sleek-dim text-sm italic opacity-50">
+                    Awaiting first command directive...
                   </div>
                 )}
-              </motion.div>
-            ))}
-            {loading && (
-              <motion.div 
-                initial={{ opacity: 1 }}
-                className="flex items-center gap-2 text-win-blue animate-pulse"
-              >
-                <div className="w-1.5 h-1.5 bg-win-blue rounded-full animate-bounce" style={{ animationDelay: '0s' }} />
-                <div className="w-1.5 h-1.5 bg-win-blue rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
-                <div className="w-1.5 h-1.5 bg-win-blue rounded-full animate-bounce" style={{ animationDelay: '0.4s' }} />
-                <span className="text-xs font-bold uppercase tracking-widest ml-2">Agent is thinking</span>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </section>
+                {history.map((item) => (
+                  <motion.div 
+                    key={item.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`flex flex-col ${item.role === 'user' ? 'items-end' : 'items-start'} gap-2`}
+                  >
+                    {item.role === 'user' ? (
+                      <div className="bg-win-blue text-white px-5 py-3 rounded-2xl rounded-tr-none text-sm max-w-[80%] shadow-lg">
+                        {item.content}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-3 max-w-[85%]">
+                        <div className="bg-sleek-card border border-sleek-border text-sleek-text px-5 py-4 rounded-2xl rounded-tl-none text-sm leading-relaxed shadow-sm">
+                          {item.content}
+                        </div>
+                        {item.metadata?.command && (
+                          <div className="bg-black/40 border border-sleek-border rounded-lg p-3 font-mono text-[11px] text-[#9cdcfe] group relative">
+                            <div className="text-[10px] text-win-blue font-bold mb-2 flex justify-between items-center">
+                              <span>EXECUTING COMMAND</span>
+                              <button 
+                                onClick={() => navigator.clipboard.writeText(JSON.stringify(item.metadata?.command, null, 2))}
+                                className="text-text-dim hover:text-white transition-colors"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
+                            </div>
+                            <pre className="whitespace-pre-wrap">
+                              {JSON.stringify(item.metadata.command, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </motion.div>
+                ))}
+                {loading && (
+                  <motion.div 
+                    initial={{ opacity: 1 }}
+                    className="flex items-center gap-2 text-win-blue animate-pulse"
+                  >
+                    <div className="w-1.5 h-1.5 bg-win-blue rounded-full animate-bounce" style={{ animationDelay: '0s' }} />
+                    <div className="w-1.5 h-1.5 bg-win-blue rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
+                    <div className="w-1.5 h-1.5 bg-win-blue rounded-full animate-bounce" style={{ animationDelay: '0.4s' }} />
+                    <span className="text-xs font-bold uppercase tracking-widest ml-2">Agent is thinking</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </section>
 
-        <div className="px-10 py-8 bg-sleek-surface border-t border-sleek-border">
-          <form onSubmit={handleSubmit} className="relative">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Talk to your Windows Agent..."
-              className="w-full bg-sleek-card border border-sleek-blue px-6 py-4 rounded-[30px] text-sleek-text focus:outline-none focus:ring-1 focus:ring-sleek-blue/50 placeholder:text-sleek-dim pr-28"
-            />
-            <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-3">
-              <button 
-                type="button"
-                onClick={toggleListening}
-                className={`p-2 transition-all rounded-full ${isListening ? 'bg-red-500/20 text-red-500 animate-pulse' : 'text-sleek-dim hover:text-win-blue hover:bg-win-blue/10'}`}
-              >
-                {isListening ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
-              </button>
-              <button 
-                id="submit-prompt"
-                type="submit"
-                disabled={!input.trim() || loading}
-                className="p-2 text-sleek-blue hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-colors"
-              >
-                <Send className="w-5 h-5" />
-              </button>
+            <div className="px-10 py-8 bg-sleek-surface border-t border-sleek-border">
+              <form onSubmit={handleSubmit} className="relative">
+                <input
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Talk to your Windows Agent..."
+                  className="w-full bg-sleek-card border border-sleek-blue px-6 py-4 rounded-[30px] text-sleek-text focus:outline-none focus:ring-1 focus:ring-sleek-blue/50 placeholder:text-sleek-dim pr-28"
+                />
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-3">
+                  <button 
+                    type="button"
+                    onClick={toggleListening}
+                    className={`p-2 transition-all rounded-full ${isListening ? 'bg-red-500/20 text-red-500 animate-pulse' : 'text-sleek-dim hover:text-win-blue hover:bg-win-blue/10'}`}
+                  >
+                    {isListening ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+                  </button>
+                  <button 
+                    id="submit-prompt"
+                    type="submit"
+                    disabled={!input.trim() || loading}
+                    className="p-2 text-sleek-blue hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                  >
+                    <Send className="w-5 h-5" />
+                  </button>
+                </div>
+              </form>
             </div>
-          </form>
-        </div>
+          </>
+        )}
       </main>
     </div>
   );
