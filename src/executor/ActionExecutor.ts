@@ -11,6 +11,12 @@ export class ActionExecutor {
     if (command.action === 'update_memory') {
       return "Memory updated";
     }
+    if (command.action === 'change_branding') {
+        const { botName, agentTitle } = command.params;
+        localStorage.setItem('WIN_AGENT_NAME', botName);
+        localStorage.setItem('WIN_AGENT_TITLE', agentTitle);
+        return "Branding updated.";
+    }
 
     try {
       const runnerRes = await fetch('http://127.0.0.1:5000/execute', {

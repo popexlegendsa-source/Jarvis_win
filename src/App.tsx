@@ -51,7 +51,8 @@ Available commands:
 5. run_command {"cmd": string} - EXECUTED IN POWERSHELL. Use PS syntax.
 6. system_control {"action": "shutdown|restart|sleep"}
 7. file_operation {"operation": "create|delete|read", "path": string} (Supports glob)
-8. update_memory {"key": string, "value": any}
+10. change_branding {"botName": string, "agentTitle": string}
+11. update_memory {"key": string, "value": any}
 9. network_filter {"net_action": "list_active|block|unblock", "process_info": string} - Use to find/block/unblock app network access.
 
 Return ONLY the JSON object.`;
@@ -83,6 +84,9 @@ export default function App() {
     localStorage.setItem('WIN_AGENT_BRIDGE_TOKEN', newToken);
     return newToken;
   });
+  const [botName, setBotName] = useState(localStorage.getItem('WIN_AGENT_NAME') || 'JARVIS');
+  const [agentTitle, setAgentTitle] = useState(localStorage.getItem('WIN_AGENT_TITLE') || 'Your Assistant');
+
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
@@ -279,9 +283,18 @@ export default function App() {
   }, [provider, geminiKey, openaiKey, anthropicKey]);
 
   useEffect(() => {
+    if (activeTab === 'chat' && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
     localStorage.setItem('WIN_AGENT_HISTORY', JSON.stringify(history));
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
     }
   }, [history]);
 
@@ -359,11 +372,13 @@ export default function App() {
 
       // Execute command if present
       if (parsed.command) {
-        if (parsed.command.action === 'update_memory') {
-          const { key, value } = parsed.command.params;
-          if (key) {
-            setMemory(prev => ({ ...prev, [key]: value }));
-          }
+        if (parsed.command.action === 'change_branding') {
+          const { botName, agentTitle } = parsed.command.params;
+          localStorage.setItem('WIN_AGENT_NAME', botName);
+          localStorage.setItem('WIN_AGENT_TITLE', agentTitle);
+          setBotName(botName);
+          setAgentTitle(agentTitle);
+          parsed.message += "\nBranding updated successfully.";
         } else {
             const executionResult = await actionExecutor.execute(parsed.command);
             parsed.message += executionResult;
@@ -723,7 +738,7 @@ export default function App() {
         <aside className="w-[280px] bg-hud-panel/40 backdrop-blur-md border-r border-hud-border p-6 flex flex-col gap-6">
         <div className="flex items-center gap-2 text-xl font-bold text-hud-cyan tracking-widest font-mono uppercase">
           <div className="w-4 h-4 bg-hud-cyan rounded-full shadow-[0_0_15px_rgba(0,240,255,0.8)] animate-pulse" />
-          JARVIS <span className="opacity-50 text-sm">v{pkg.version}</span>
+          {botName} <span className="opacity-50 text-sm">v{pkg.version}</span>
         </div>
 
         <div className="space-y-4">
@@ -789,7 +804,7 @@ export default function App() {
           <>
             <header className="px-10 py-6 border-b border-hud-border flex justify-between items-center bg-black/40 backdrop-blur-md">
               <div>
-                <h2 className="text-sm font-semibold text-hud-text uppercase tracking-widest text-shadow-cyan">Your Assistant</h2>
+                <h2 className="text-sm font-semibold text-hud-text uppercase tracking-widest text-shadow-cyan">{agentTitle}</h2>
                 <p className="text-[12px] text-hud-cyan/70 font-mono mt-1">SECURE ENCLAVE ACTIVE</p>
               </div>
               <div className="text-[11px] text-hud-green font-mono tracking-widest flex items-center gap-2">
