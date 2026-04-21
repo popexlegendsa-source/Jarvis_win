@@ -566,6 +566,11 @@ export default function App() {
                               <option value="claude-3-opus-latest" className="bg-hud-bg text-hud-text">Claude 3 Opus</option>
                             </>
                           )}
+                          {provider === 'ollama' && (
+                            <>
+                              <option value="qwen2.5-coder:7b" className="bg-hud-bg text-hud-text">Qwen 2.5 Coder 7B</option>
+                            </>
+                          )}
                         </select>
                       </div>
 
