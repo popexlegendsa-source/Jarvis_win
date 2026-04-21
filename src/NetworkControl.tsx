@@ -31,6 +31,8 @@ export function NetworkControl({ bridgeToken }: NetworkControlProps) {
       const data = await res.json();
       if (data.status === 'success') {
          setConnections(data.connections);
+      } else if (data.status === 'error' && data.msg.includes('Token')) {
+         setError("🔒 Access Denied: Token Mismatch! Please open 'Settings & API Key' (Monitor icon in left sidebar) -> 'Local PC Bridge Token' and paste the Agent Token shown in your launcher console.");
       } else {
          setError(data.msg);
       }
@@ -68,6 +70,8 @@ export function NetworkControl({ bridgeToken }: NetworkControlProps) {
       const result = await res.json();
       if (result.status === 'success') {
          alert(`Success: ${result.msg}`);
+      } else if (result.status === 'error' && result.msg.includes('Token')) {
+         alert("Access Denied: Token Mismatch! Please update your Bridge Token in Settings matching the Launcher console.");
       } else {
          alert(`Error: ${result.msg}`);
       }

@@ -56,17 +56,34 @@ class LauncherApp(tk.Tk):
             admin_lbl = tk.Label(header, text="Running as Administrator", bg="#1e1e24", fg="#4CAF50", font=("Segoe UI", 11, "bold"))
             admin_lbl.pack(side=tk.RIGHT, padx=30, pady=25)
 
-        controls = tk.Frame(self, bg="#121215", pady=20)
+        controls = tk.Frame(self, bg="#121215", pady=10)
         controls.pack(fill=tk.X)
         
-        self.start_btn = tk.Button(controls, text="▶ Start JARVIS", bg="#0066cc", fg="white", font=("Segoe UI", 11, "bold"), relief=tk.FLAT, command=self.start_all)
+        buttons_frame = tk.Frame(controls, bg="#121215")
+        buttons_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        self.start_btn = tk.Button(buttons_frame, text="▶ Start JARVIS", bg="#0066cc", fg="white", font=("Segoe UI", 11, "bold"), relief=tk.FLAT, command=self.start_all)
         self.start_btn.pack(side=tk.LEFT, padx=30, ipadx=15, ipady=5)
         
-        self.stop_btn = tk.Button(controls, text="■ Stop All", bg="#444444", fg="white", font=("Segoe UI", 11, "bold"), relief=tk.FLAT, state=tk.DISABLED, command=self.stop_all)
+        self.stop_btn = tk.Button(buttons_frame, text="■ Stop All", bg="#444444", fg="white", font=("Segoe UI", 11, "bold"), relief=tk.FLAT, state=tk.DISABLED, command=self.stop_all)
         self.stop_btn.pack(side=tk.LEFT, padx=10, ipadx=15, ipady=5)
         
-        self.browser_btn = tk.Button(controls, text="🌐 Dashboard", bg="#2b2b2b", fg="white", font=("Segoe UI", 11), relief=tk.FLAT, command=lambda: webbrowser.open("http://localhost:3000"))
+        self.browser_btn = tk.Button(buttons_frame, text="🌐 Dashboard", bg="#2b2b2b", fg="white", font=("Segoe UI", 11), relief=tk.FLAT, command=lambda: webbrowser.open("http://localhost:3000"))
         self.browser_btn.pack(side=tk.RIGHT, padx=30, ipadx=15, ipady=5)
+
+        token_frame = tk.Frame(controls, bg="#1a1a20", pady=10)
+        token_frame.pack(fill=tk.X, padx=30)
+        
+        token_lbl = tk.Label(token_frame, text="Local Bridge Token:", bg="#1a1a20", fg="#888888", font=("Segoe UI", 10, "bold"))
+        token_lbl.pack(side=tk.LEFT, padx=(15, 5))
+        
+        token_entry = tk.Entry(token_frame, width=22, bg="#111111", fg="#00ff00", font=("Consolas", 12, "bold"), relief=tk.FLAT, justify="center")
+        token_entry.insert(0, self.token)
+        token_entry.config(state="readonly")
+        token_entry.pack(side=tk.LEFT, padx=5, ipady=4)
+        
+        copy_btn = tk.Button(token_frame, text="📋 Copy", bg="#444444", fg="white", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, command=self.copy_token)
+        copy_btn.pack(side=tk.LEFT, padx=5, ipadx=8, ipady=2)
 
         log_frame = tk.Frame(self, bg="#121215")
         log_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=(0, 30))
@@ -78,8 +95,12 @@ class LauncherApp(tk.Tk):
         self.log_area.pack(fill=tk.BOTH, expand=True)
         
         self.log("[SYSTEM] Control Center ready.")
-        self.log(f"[SYSTEM] Agent Token: {self.token}")
-        self.log("[SYSTEM] Waiting for user to start JARVIS...")
+        self.log("[SYSTEM] Welcome to JARVIS. Waiting for user to press Start...")
+
+    def copy_token(self):
+        self.clipboard_clear()
+        self.clipboard_append(self.token)
+        self.log(f"[SYSTEM] Bridge Token copied to clipboard: {self.token}")
 
     def log(self, msg):
         self.log_area.insert(tk.END, msg + "\n")
@@ -113,6 +134,14 @@ class LauncherApp(tk.Tk):
 
     def _run_processes(self):
         self.kill_ports()
+        
+        # Git Auto-Pull
+        if os.path.exists(".git") and shutil.which("git"):
+            self.after(0, self.log, "[SYSTEM] Checking for JARVIS updates from GitHub...")
+            pull_proc = subprocess.run(["git", "pull"], capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
+            if pull_proc.stdout:
+                for line in pull_proc.stdout.strip().split('\n'):
+                    self.after(0, self.log, f"[GIT] {line}")
         
         npm_path = shutil.which("npm.cmd") or shutil.which("npm") or "npm.cmd"
         if not os.path.exists("node_modules"):

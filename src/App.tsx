@@ -637,7 +637,7 @@ export default function App() {
 
                       <div className="pt-4 border-t border-sleek-border/30">
                         <label className="text-[11px] uppercase text-win-blue font-bold mb-4 block">Local PC Bridge Token</label>
-                        <p className="text-[10px] text-sleek-dim mb-3">Copy this into your command prompt when JARVIS asks. OR, if you already typed a PIN into your local prompt, type it here so they match!</p>
+                        <p className="text-[10px] text-sleek-dim mb-3">Copy the <strong className="text-white">Agent Token</strong> displayed in your Launcher's console window and paste it here, so the Web UI has permission to execute commands on your PC.</p>
                         <div className="flex gap-2">
                           <input 
                             value={bridgeToken}
