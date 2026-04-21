@@ -478,7 +478,8 @@ export default function App() {
                           {[
                             { id: 'gemini', label: 'Gemini' },
                             { id: 'openai', label: 'OpenAI' },
-                            { id: 'anthropic', label: 'Claude' }
+                            { id: 'anthropic', label: 'Claude' },
+                            { id: 'ollama', label: 'Ollama' }
                           ].map(p => (
                             <button
                               key={p.id}

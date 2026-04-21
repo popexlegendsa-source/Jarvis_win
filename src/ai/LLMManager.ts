@@ -24,7 +24,22 @@ export class LLMManager {
   ): Promise<string> {
     let responseText = "";
 
-    if (provider === 'gemini' && this.geminiClient) {
+    if (provider === 'ollama') {
+      const response = await fetch('http://localhost:11434/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: model,
+          prompt: `${systemPrompt}\nContext: ${JSON.stringify(memory)}\nHistory: ${JSON.stringify(history.slice(-5))}\nUser: ${query}\nAssistant:`,
+          stream: false
+        })
+      });
+
+      if (!response.ok) throw new Error(`Ollama error: ${response.statusText}`);
+      const data = await response.json();
+      responseText = data.response;
+      
+    } else if (provider === 'gemini' && this.geminiClient) {
         const conversationContext = history.slice(-10).map(item => ({
           role: item.role,
           parts: [{ text: item.content }]
