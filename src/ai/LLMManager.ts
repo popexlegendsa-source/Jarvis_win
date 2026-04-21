@@ -29,7 +29,7 @@ export class LLMManager {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: model,
+          model: 'qwen2.5-coder:7b', // Принудительно используем локальную модель
           prompt: `${systemPrompt}\nContext: ${JSON.stringify(memory)}\nHistory: ${JSON.stringify(history.slice(-5))}\nUser: ${query}\nAssistant:`,
           stream: false
         })
