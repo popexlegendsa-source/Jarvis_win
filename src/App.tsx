@@ -279,6 +279,7 @@ export default function App() {
     if (provider === 'gemini') return !!(geminiKey || getEnvironmentApiKey());
     if (provider === 'openai') return !!openaiKey;
     if (provider === 'anthropic') return !!anthropicKey;
+    if (provider === 'ollama') return true; // Ollama doesn't strictly require an API key in this context
     return false;
   }, [provider, geminiKey, openaiKey, anthropicKey]);
 
