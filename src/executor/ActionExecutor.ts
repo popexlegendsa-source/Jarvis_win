@@ -1,4 +1,4 @@
-import { ParsedCommand } from "../command/CommandParser";
+import { ParsedCommand } from "../types";
 
 export class ActionExecutor {
   private bridgeToken: string;

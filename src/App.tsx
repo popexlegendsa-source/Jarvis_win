@@ -111,11 +111,11 @@ export default function App() {
   const [isAIVoiceEnabled, setIsAIVoiceEnabled] = useState(localStorage.getItem('WIN_AGENT_AI_VOICE') === 'true');
   const [aiVoiceName, setAiVoiceName] = useState(localStorage.getItem('WIN_AGENT_AI_VOICE_NAME') || 'Kore');
   const [isListening, setIsListening] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState<{available: boolean, version: string, downloadUrl?: string} | null>(null);
 
   useEffect(() => {
-    VersionManager.syncCode().then(success => {
-      if (success) console.log("Code synchronized with GitHub");
-      else console.error("Code sync failed");
+    VersionManager.check().then(result => {
+      if (result.available) setUpdateAvailable(result);
     });
   }, []);
 
@@ -261,6 +261,14 @@ export default function App() {
     anthropicKey
   ), [geminiKey, openaiKey, anthropicKey]);
 
+  const ai = useMemo(() => {
+    const apiKey = geminiKey || getEnvironmentApiKey();
+    if (provider === 'gemini' && apiKey) {
+      return new GoogleGenAI({ apiKey });
+    }
+    return null;
+  }, [geminiKey, provider]);
+
   const actionExecutor = useMemo(() => new ActionExecutor(bridgeToken), [bridgeToken]);
 
   const hasApiKey = useMemo(() => {
@@ -309,7 +317,7 @@ export default function App() {
     e?.preventDefault();
     if (!input.trim() || loading) return;
 
-    if (!ai) {
+    if (!hasApiKey) {
       setIsSettingsOpen(true);
       setSettingsTab('api');
       return;

@@ -1,24 +1,31 @@
-import { CURRENT_VERSION } from "../constants";
+import { CURRENT_VERSION, VERSION_URL } from "../constants";
 
 export class VersionManager {
-  // Developer Workflow: Instead of checking versions on GitHub,
-  // we trigger a synchronization command on your local machine.
-  static async syncCode(): Promise<boolean> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000); // 2-second timeout
-
+  static async check(): Promise<{ available: boolean, version: string, downloadUrl?: string }> {
     try {
-      const resp = await fetch('http://127.0.0.1:5000/sync', {
+      const res = await fetch(VERSION_URL);
+      const data = await res.json();
+      return { 
+        available: data.version !== CURRENT_VERSION, 
+        version: data.version,
+        downloadUrl: data.downloadUrl
+      };
+    } catch (e) {
+      console.error("Failed to check for updates", e);
+      return { available: false, version: CURRENT_VERSION };
+    }
+  }
+
+  static async triggerUpdate(downloadUrl: string): Promise<boolean> {
+    try {
+      const resp = await fetch('http://127.0.0.1:5000/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'git_pull' }),
-        signal: controller.signal
+        body: JSON.stringify({ url: downloadUrl })
       });
-      clearTimeout(timeout);
       return resp.ok;
     } catch (e) {
-      clearTimeout(timeout);
-      console.error("Failed to trigger git sync", e);
+      console.error("Local runner update endpoint error", e);
       return false;
     }
   }
