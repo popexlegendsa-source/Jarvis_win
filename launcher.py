@@ -42,6 +42,23 @@ class LauncherApp(tk.Tk):
             f.write(tk_val)
         return tk_val
 
+    def check_dependencies(self):
+        missing = []
+        if not shutil.which("node") and not shutil.which("npm") and not shutil.which("npm.cmd"):
+            missing.append("Node.js (npm)")
+        if not shutil.which("python") and not shutil.which("python3"):
+            missing.append("Python 3")
+        if not shutil.which("git"):
+            missing.append("Git")
+        
+        if missing:
+            self.log(f"[ERROR] Missing required dependencies: {', '.join(missing)}")
+            self.log("[ERROR] Please install them and restart this launcher.")
+            self.start_btn.config(state=tk.DISABLED, bg="#444444")
+            self.update_btn.config(state=tk.DISABLED, bg="#444444")
+            return False
+        return True
+
     def build_ui(self):
         header = tk.Frame(self, bg="#1e1e24", height=80)
         header.pack(fill=tk.X, side=tk.TOP)
@@ -99,6 +116,8 @@ class LauncherApp(tk.Tk):
         
         self.log("[SYSTEM] Control Center ready.")
         self.log("[SYSTEM] Welcome to JARVIS. Waiting for user to press Start...")
+        
+        self.after(500, self.check_dependencies)
 
     def copy_token(self):
         self.clipboard_clear()
@@ -128,7 +147,12 @@ class LauncherApp(tk.Tk):
             return
             
         try:
-            self.after(0, self.log, "[UPDATE] 1/3 Fetching latest code...")
+            self.after(0, self.log, "[UPDATE] Stopping active processes before update to prevent file locks...")
+            self.stop_all()
+            time.sleep(2)  # Give processes time to die
+            
+            self.after(0, self.log, "[UPDATE] 1/3 Stashing local changes and fetching latest code...")
+            subprocess.run(["git", "stash"], capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
             subprocess.run(["git", "fetch", "--all"], capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
             
             self.after(0, self.log, "[UPDATE] 2/3 Hard resetting local project to origin/main...")

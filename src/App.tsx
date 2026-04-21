@@ -776,12 +776,15 @@ export default function App() {
 
         <div className="space-y-4">
           <div className="bg-sleek-card border border-sleek-border rounded-xl p-4">
-            <span className="text-[11px] uppercase text-sleek-dim tracking-wider mb-2 block font-semibold">Local PC Bridge</span>
+            <span className="text-[11px] uppercase text-sleek-dim tracking-wider mb-2 block font-semibold flex justify-between items-center">
+              <span>Local PC Bridge</span>
+              <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+            </span>
             <div className="text-sm flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-sleek-green indicator-glow' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'}`} />
-              {isConnected ? 'Online & Secured' : 'Offline'}
+              {isConnected ? <span className="text-emerald-400">Online & Secured</span> : <span className="text-red-400">Offline</span>}
             </div>
-            {!isConnected && <p className="text-[10px] text-red-400 mt-2">Run run_local.bat on PC to connect</p>}
+            {!isConnected && <p className="text-[10px] text-red-400/80 mt-2 font-medium">Please start JARVIS launcher on your Windows PC to connect.</p>}
           </div>
 
           <div className="bg-sleek-card border border-sleek-border rounded-xl p-4">
