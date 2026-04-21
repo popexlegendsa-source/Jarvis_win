@@ -27,6 +27,11 @@ echo [2/3] Compiling assistant.exe (GUI Launcher)...
 python -m PyInstaller --onefile --noconsole --name "assistant" launcher.py
 
 echo [3/3] Cleaning up build files...
+echo Removing old EXE (if exists)...
+if exist "assistant.exe" (
+    del /f /q "assistant.old.exe" >nul 2>&1
+    rename "assistant.exe" "assistant.old.exe" >nul 2>&1
+)
 move /y "dist\assistant.exe" "assistant.exe" >nul 2>&1
 rmdir /s /q build >nul 2>&1
 rmdir /s /q dist >nul 2>&1

@@ -4,8 +4,9 @@ import { Shield, ShieldOff, RefreshCw, Server, Activity } from 'lucide-react';
 interface Connection {
   ProcessName: string;
   PID: number;
+  Protocol: string;
   RemoteAddress: string;
-  RemotePort: number;
+  RemotePort: string | number;
   Path: string;
 }
 
@@ -109,10 +110,10 @@ export function NetworkControl({ bridgeToken }: NetworkControlProps) {
         
         <div className="bg-sleek-surface border border-sleek-border rounded-2xl flex-1 overflow-hidden flex flex-col shadow-xl">
            <div className="grid grid-cols-12 gap-4 p-4 border-b border-sleek-border bg-black/20 text-[11px] font-bold uppercase text-sleek-dim tracking-wider">
-              <div className="col-span-3">Process</div>
+              <div className="col-span-2">Process</div>
+              <div className="col-span-2">Protocol</div>
               <div className="col-span-1">PID</div>
-              <div className="col-span-2">Remote IP</div>
-              <div className="col-span-1">Port</div>
+              <div className="col-span-2">Remote Address</div>
               <div className="col-span-3">Path</div>
               <div className="col-span-2 text-right">Actions</div>
            </div>
@@ -127,18 +128,20 @@ export function NetworkControl({ bridgeToken }: NetworkControlProps) {
              
              {connections.map((conn, idx) => (
                <div key={`${conn.PID}-${conn.RemoteAddress}-${idx}`} className="grid grid-cols-12 gap-4 p-3 border-b border-sleek-border/30 hover:bg-white/5 items-center transition-colors group">
-                 <div className="col-span-3 font-medium text-sleek-text text-sm flex items-center gap-2">
-                   <div className="w-2 h-2 rounded-full bg-win-blue/50" />
-                   {conn.ProcessName}
+                 <div className="col-span-2 font-medium text-sleek-text text-sm flex items-center gap-2 truncate pr-2">
+                   <div className="w-2 h-2 rounded-full flex-shrink-0 bg-win-blue/50" />
+                   <span className="truncate">{conn.ProcessName}</span>
+                 </div>
+                 <div className="col-span-2 flex items-center">
+                   <span className="text-[9px] uppercase font-bold text-win-blue/80 bg-win-blue/10 px-2 py-0.5 rounded truncate">
+                     {conn.Protocol}
+                   </span>
                  </div>
                  <div className="col-span-1 text-xs font-mono text-sleek-dim">
                    {conn.PID}
                  </div>
-                 <div className="col-span-2 text-xs font-mono text-sleek-text">
-                   {conn.RemoteAddress}
-                 </div>
-                 <div className="col-span-1 text-xs font-mono text-sleek-dim">
-                   {conn.RemotePort}
+                 <div className="col-span-2 text-xs font-mono text-sleek-text truncate pr-2">
+                   {conn.RemoteAddress}:{conn.RemotePort}
                  </div>
                  <div className="col-span-3 text-[11px] text-sleek-dim truncate" title={conn.Path}>
                    {conn.Path || 'System / Service'}

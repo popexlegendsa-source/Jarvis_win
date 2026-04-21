@@ -62,21 +62,35 @@ def network_connections():
             return jsonify({"status": "error", "msg": "Unauthorized. Invalid Token."}), 401
 
     ps_script = """
-    $conns = Get-NetTCPConnection -State Established -ErrorAction SilentlyContinue
+    $tcp = Get-NetTCPConnection -ErrorAction SilentlyContinue | Where-Object { $_.State -eq 'Established' -or $_.State -eq 'Listen' }
+    $udp = Get-NetUDPEndpoint -ErrorAction SilentlyContinue
     $results = @()
-    foreach ($c in $conns) {
+    
+    foreach ($c in $tcp) {
         $proc = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue
         $results += [PSCustomObject]@{
             ProcessName = if ($proc) { $proc.ProcessName } else { "Unknown" }
             PID = $c.OwningProcess
-            LocalAddress = $c.LocalAddress
-            LocalPort = $c.LocalPort
+            Protocol = "TCP " + $c.State
             RemoteAddress = $c.RemoteAddress
             RemotePort = $c.RemotePort
             Path = if ($proc) { $proc.Path } else { "" }
         }
     }
-    $results | Select-Object -Unique ProcessName, PID, RemoteAddress, RemotePort, Path | ConvertTo-Json -Compress
+    
+    foreach ($c in $udp) {
+        $proc = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue
+        $results += [PSCustomObject]@{
+            ProcessName = if ($proc) { $proc.ProcessName } else { "Unknown" }
+            PID = $c.OwningProcess
+            Protocol = "UDP"
+            RemoteAddress = "*"
+            RemotePort = "*"
+            Path = if ($proc) { $proc.Path } else { "" }
+        }
+    }
+    
+    $results | Where-Object { $_.ProcessName -ne 'Unknown' -and $_.ProcessName -ne 'Idle' } | Select-Object -Unique ProcessName, PID, Protocol, RemoteAddress, RemotePort, Path | Sort-Object ProcessName | ConvertTo-Json -Compress
     """
     try:
         out = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True)

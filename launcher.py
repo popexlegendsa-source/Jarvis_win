@@ -63,13 +63,16 @@ class LauncherApp(tk.Tk):
         buttons_frame.pack(fill=tk.X, pady=(0, 10))
         
         self.start_btn = tk.Button(buttons_frame, text="▶ Start JARVIS", bg="#0066cc", fg="white", font=("Segoe UI", 11, "bold"), relief=tk.FLAT, command=self.start_all)
-        self.start_btn.pack(side=tk.LEFT, padx=30, ipadx=15, ipady=5)
+        self.start_btn.pack(side=tk.LEFT, padx=15, ipadx=10, ipady=5)
         
         self.stop_btn = tk.Button(buttons_frame, text="■ Stop All", bg="#444444", fg="white", font=("Segoe UI", 11, "bold"), relief=tk.FLAT, state=tk.DISABLED, command=self.stop_all)
-        self.stop_btn.pack(side=tk.LEFT, padx=10, ipadx=15, ipady=5)
+        self.stop_btn.pack(side=tk.LEFT, padx=5, ipadx=10, ipady=5)
+
+        self.update_btn = tk.Button(buttons_frame, text="🔄 Force Update & Rebuild", bg="#cc6600", fg="white", font=("Segoe UI", 10, "bold"), relief=tk.FLAT, command=self.force_update)
+        self.update_btn.pack(side=tk.LEFT, padx=15, ipadx=10, ipady=5)
         
         self.browser_btn = tk.Button(buttons_frame, text="🌐 Dashboard", bg="#2b2b2b", fg="white", font=("Segoe UI", 11), relief=tk.FLAT, command=lambda: webbrowser.open("http://localhost:3000"))
-        self.browser_btn.pack(side=tk.RIGHT, padx=30, ipadx=15, ipady=5)
+        self.browser_btn.pack(side=tk.RIGHT, padx=15, ipadx=10, ipady=5)
 
         token_frame = tk.Frame(controls, bg="#1a1a20", pady=10)
         token_frame.pack(fill=tk.X, padx=30)
@@ -113,6 +116,42 @@ class LauncherApp(tk.Tk):
         except:
             pass
 
+    def force_update(self):
+        self.log("[UPDATE] Force syncing with GitHub (resetting local changes)...")
+        self.update_btn.config(state=tk.DISABLED)
+        threading.Thread(target=self._run_force_update, daemon=True).start()
+
+    def _run_force_update(self):
+        if not os.path.exists(".git"):
+            self.after(0, self.log, "[ERROR] Not a Git repository. Cannot auto-update.")
+            self.after(0, lambda: self.update_btn.config(state=tk.NORMAL))
+            return
+            
+        try:
+            self.after(0, self.log, "[UPDATE] 1/3 Fetching latest code...")
+            subprocess.run(["git", "fetch", "--all"], capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
+            
+            self.after(0, self.log, "[UPDATE] 2/3 Hard resetting local project to origin/main...")
+            reset_proc = subprocess.run(["git", "reset", "--hard", "origin/main"], capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
+            self.after(0, self.log, reset_proc.stdout.strip())
+            
+            self.after(0, self.log, "[UPDATE] 3/3 Generating new assistant.exe in the background...")
+            npm_path = shutil.which("npm.cmd") or shutil.which("npm") or "npm.cmd"
+            subprocess.run([npm_path, "install"], creationflags=CREATE_NO_WINDOW)
+            
+            # Re-compile
+            if os.path.exists("build_assistant_exe.bat"):
+                subprocess.Popen(["cmd.exe", "/c", "start", "build_assistant_exe.bat"])
+                self.after(0, self.log, "[SUCCESS] Update complete! The compiler window popped up to build the new EXE.")
+                self.after(0, self.log, "[!] PLEASE CLOSE THIS WINDOW AND LAUNCH THE NEW assistant.exe ONCE IT IS DONE BUILDING.")
+            else:
+                self.after(0, self.log, "[SUCCESS] Update complete! Restart the script.")
+                
+        except Exception as e:
+            self.after(0, self.log, f"[UPDATE ERROR] {e}")
+        finally:
+            self.after(0, lambda: self.update_btn.config(state=tk.NORMAL))
+
     def read_stream(self, pipe, prefix):
         try:
             for line in iter(pipe.readline, b''):
@@ -142,6 +181,10 @@ class LauncherApp(tk.Tk):
             if pull_proc.stdout:
                 for line in pull_proc.stdout.strip().split('\n'):
                     self.after(0, self.log, f"[GIT] {line}")
+            if pull_proc.returncode != 0 and pull_proc.stderr:
+                for line in pull_proc.stderr.strip().split('\n'):
+                    self.after(0, self.log, f"[GIT ERROR] {line}")
+                self.after(0, self.log, "[SYSTEM] Minor GIT issue detected. Update might have failed. Use 'Force Update' if UI seems broken.")
         
         npm_path = shutil.which("npm.cmd") or shutil.which("npm") or "npm.cmd"
         if not os.path.exists("node_modules"):
