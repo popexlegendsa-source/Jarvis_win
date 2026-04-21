@@ -37,7 +37,7 @@ export class LLMManager {
 
       if (!response.ok) throw new Error(`Ollama error: ${response.statusText}`);
       const data = await response.json();
-      responseText = data.response;
+      responseText = data.response.replace(/```json\n?|\n?```/g, '').trim();
       
     } else if (provider === 'gemini' && this.geminiClient) {
         const conversationContext = history.slice(-10).map(item => ({
