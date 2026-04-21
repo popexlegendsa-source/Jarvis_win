@@ -111,11 +111,11 @@ export default function App() {
   const [isAIVoiceEnabled, setIsAIVoiceEnabled] = useState(localStorage.getItem('WIN_AGENT_AI_VOICE') === 'true');
   const [aiVoiceName, setAiVoiceName] = useState(localStorage.getItem('WIN_AGENT_AI_VOICE_NAME') || 'Kore');
   const [isListening, setIsListening] = useState(false);
-  const [updateAvailable, setUpdateAvailable] = useState<{available: boolean, version: string, downloadUrl?: string} | null>(null);
 
   useEffect(() => {
-    VersionManager.check().then(result => {
-      if (result.available) setUpdateAvailable(result);
+    VersionManager.syncCode().then(success => {
+      if (success) console.log("Code synchronized with GitHub");
+      else console.error("Code sync failed");
     });
   }, []);
 

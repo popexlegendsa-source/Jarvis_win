@@ -1,31 +1,20 @@
-import { CURRENT_VERSION, VERSION_URL } from "../constants";
+import { CURRENT_VERSION } from "../constants";
 
 export class VersionManager {
-  static async check(): Promise<{ available: boolean, version: string, downloadUrl?: string }> {
+  // Developer Workflow: Instead of checking versions on GitHub,
+  // we trigger a synchronization command on your local machine.
+  static async syncCode(): Promise<boolean> {
     try {
-      const res = await fetch(VERSION_URL);
-      const data = await res.json();
-      return { 
-        available: data.version !== CURRENT_VERSION, 
-        version: data.version,
-        downloadUrl: data.downloadUrl
-      };
-    } catch (e) {
-      console.error("Failed to check for updates", e);
-      return { available: false, version: CURRENT_VERSION };
-    }
-  }
-
-  static async triggerUpdate(downloadUrl: string): Promise<boolean> {
-    try {
-      const resp = await fetch('http://127.0.0.1:5000/update', {
+      // This endpoint should be implemented in your local runner (assistant.exe side)
+      // to execute 'git pull origin main'
+      const resp = await fetch('http://127.0.0.1:5000/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: downloadUrl })
+        body: JSON.stringify({ action: 'git_pull' })
       });
       return resp.ok;
     } catch (e) {
-      console.error("Local runner update endpoint error", e);
+      console.error("Failed to trigger git sync", e);
       return false;
     }
   }
