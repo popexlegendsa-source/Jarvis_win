@@ -353,7 +353,14 @@ export default function App() {
     setLoading(true);
 
     try {
-      const activeKey = provider === 'gemini' ? (geminiKey || getEnvironmentApiKey()) : (provider === 'openai' ? openaiKey : anthropicKey);
+      const activeKey = provider === 'gemini' 
+        ? (geminiKey || getEnvironmentApiKey()) 
+        : (provider === 'openai' 
+          ? openaiKey 
+          : (provider === 'anthropic' 
+            ? anthropicKey 
+            : 'ollama-key') // Dummy key for ollama
+          );
       
       if (!activeKey) {
         throw new Error(`Missing API Key for ${provider}. Please check Settings.`);
