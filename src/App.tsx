@@ -36,26 +36,27 @@ Current User Profile/Memory:
 ${JSON.stringify(memory, null, 2)}
 (Note: Use this to personalize responses. You can update this via the 'update_memory' command).
 
-Response Guidelines:
-- ALWAYS return valid JSON.
-- Include a "message" field with a friendly, helpful explanation of what you are doing.
+STRICT RESPONSE FORMAT GUIDELINES:
+- CRITICAL: Return ONLY a single, valid JSON object.
+- NO Markdown code fencing (e.g., no \`\`\`json).
+- NO introductory or concluding text outside the JSON.
+- Include a "message" field with a friendly, helpful explanation.
 - If an action is required, include a "command" object with "action" and "params".
-- If the user is just chatting or asking a question, omit the "command" field.
-- Maintain context from previous messages.
+- If the user is just chatting, omit the "command" field entirely.
 
 Available commands:
 1. open_app {"name": string}
 2. open_url {"url": string}
 3. type_text {"text": string}
 4. press_keys {"keys": string}
-5. run_command {"cmd": string} - EXECUTED IN POWERSHELL. Use PS syntax.
+5. run_command {"cmd": string} - EXECUTED IN POWERSHELL.
 6. system_control {"action": "shutdown|restart|sleep"}
-7. file_operation {"operation": "create|delete|read", "path": string} (Supports glob)
+7. file_operation {"operation": "create|delete|read", "path": string}
 10. change_branding {"botName": string, "agentTitle": string}
 11. update_memory {"key": string, "value": any}
-9. network_filter {"net_action": "list_active|block|unblock", "process_info": string} - Use to find/block/unblock app network access.
+9. network_filter {"net_action": "list_active|block|unblock", "process_info": string}
 
-Return ONLY the JSON object.`;
+CRITICAL: Output absolutely nothing except the pure JSON structure.`;
 
 import pkg from '../package.json';
 
@@ -116,6 +117,8 @@ export default function App() {
   const [aiVoiceName, setAiVoiceName] = useState(localStorage.getItem('WIN_AGENT_AI_VOICE_NAME') || 'Kore');
   const [isListening, setIsListening] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState<{available: boolean, version: string, downloadUrl?: string} | null>(null);
+  const [ollamaEndpoint, setOllamaEndpoint] = useState(localStorage.getItem('WIN_AGENT_OLLAMA_ENDPOINT') || 'http://localhost:11434');
+  const [ollamaModel, setOllamaModel] = useState(localStorage.getItem('WIN_AGENT_OLLAMA_MODEL') || 'qwen2.5-coder:7b');
 
   useEffect(() => {
     VersionManager.check().then(result => {
@@ -262,8 +265,10 @@ export default function App() {
   const llmManager = useMemo(() => new LLMManager(
     geminiKey || getEnvironmentApiKey(),
     openaiKey,
-    anthropicKey
-  ), [geminiKey, openaiKey, anthropicKey]);
+    anthropicKey,
+    ollamaEndpoint,
+    ollamaModel
+  ), [geminiKey, openaiKey, anthropicKey, ollamaEndpoint, ollamaModel]);
 
   const ai = useMemo(() => {
     const apiKey = geminiKey || getEnvironmentApiKey();
@@ -546,40 +551,69 @@ export default function App() {
                       )}
 
                       <div>
-                        <label className="text-[10px] uppercase text-hud-dim font-bold mb-2 block tracking-widest font-mono">Processor Core Selection</label>
-                        <select 
-                          value={selectedModel}
-                          onChange={(e) => setSelectedModel(e.target.value)}
-                          className="w-full bg-black/40 border border-hud-border rounded-lg px-4 py-3 text-[12px] focus:border-hud-cyan focus:shadow-[0_0_10px_rgba(0,240,255,0.3)] focus:outline-none text-hud-text appearance-none font-mono tracking-wide transition-all"
-                        >
-                          {provider === 'gemini' && (
-                            <>
-                              <option value="gemini-3.1-flash-lite-preview" className="bg-hud-bg text-hud-text">3.1 Flash-Lite (Insanely Fast)</option>
-                              <option value="gemini-2.5-flash-8b" className="bg-hud-bg text-hud-text">2.5 Flash-8B (Highest Limit)</option>
-                              <option value="gemini-2.5-flash" className="bg-hud-bg text-hud-text">2.5 Flash (Balanced Default)</option>
-                              <option value="gemini-2.5-pro" className="bg-hud-bg text-hud-text">2.5 Pro (Precision & Logic)</option>
-                            </>
-                          )}
-                          {provider === 'openai' && (
-                            <>
-                              <option value="gpt-4o-mini" className="bg-hud-bg text-hud-text">GPT-4o Mini (Fast)</option>
-                              <option value="gpt-4o" className="bg-hud-bg text-hud-text">GPT-4o (Premium)</option>
-                              <option value="o1-mini" className="bg-hud-bg text-hud-text">o1 Mini (Logic)</option>
-                            </>
-                          )}
-                          {provider === 'anthropic' && (
-                            <>
-                              <option value="claude-3-5-sonnet-latest" className="bg-hud-bg text-hud-text">Claude 3.5 Sonnet</option>
-                              <option value="claude-3-5-haiku-latest" className="bg-hud-bg text-hud-text">Claude 3.5 Haiku</option>
-                              <option value="claude-3-opus-latest" className="bg-hud-bg text-hud-text">Claude 3 Opus</option>
-                            </>
-                          )}
-                          {provider === 'ollama' && (
-                            <>
-                              <option value="qwen2.5-coder:7b" className="bg-hud-bg text-hud-text">Qwen 2.5 Coder 7B</option>
-                            </>
-                          )}
-                        </select>
+                        {provider !== 'ollama' && (
+                          <>
+                            <label className="text-[10px] uppercase text-hud-dim font-bold mb-2 block tracking-widest font-mono">Processor Core Selection</label>
+                            <select 
+                              value={selectedModel}
+                              onChange={(e) => setSelectedModel(e.target.value)}
+                              className="w-full bg-black/40 border border-hud-border rounded-lg px-4 py-3 text-[12px] focus:border-hud-cyan focus:shadow-[0_0_10px_rgba(0,240,255,0.3)] focus:outline-none text-hud-text appearance-none font-mono tracking-wide transition-all"
+                            >
+                              {provider === 'gemini' && (
+                                <>
+                                  <option value="gemini-3.1-flash-lite-preview" className="bg-hud-bg text-hud-text">3.1 Flash-Lite (Insanely Fast)</option>
+                                  <option value="gemini-2.5-flash-8b" className="bg-hud-bg text-hud-text">2.5 Flash-8B (Highest Limit)</option>
+                                  <option value="gemini-2.5-flash" className="bg-hud-bg text-hud-text">2.5 Flash (Balanced Default)</option>
+                                  <option value="gemini-2.5-pro" className="bg-hud-bg text-hud-text">2.5 Pro (Precision & Logic)</option>
+                                </>
+                              )}
+                              {provider === 'openai' && (
+                                <>
+                                  <option value="gpt-4o-mini" className="bg-hud-bg text-hud-text">GPT-4o Mini (Fast)</option>
+                                  <option value="gpt-4o" className="bg-hud-bg text-hud-text">GPT-4o (Premium)</option>
+                                  <option value="o1-mini" className="bg-hud-bg text-hud-text">o1 Mini (Logic)</option>
+                                </>
+                              )}
+                              {provider === 'anthropic' && (
+                                <>
+                                  <option value="claude-3-5-sonnet-latest" className="bg-hud-bg text-hud-text">Claude 3.5 Sonnet</option>
+                                  <option value="claude-3-5-haiku-latest" className="bg-hud-bg text-hud-text">Claude 3.5 Haiku</option>
+                                  <option value="claude-3-opus-latest" className="bg-hud-bg text-hud-text">Claude 3 Opus</option>
+                                </>
+                              )}
+                            </select>
+                          </>
+                        )}
+                        {provider === 'ollama' && (
+                          <div className="space-y-4">
+                            <div>
+                              <label className="text-[10px] uppercase text-hud-dim font-bold mb-2 block tracking-widest font-mono">Ollama Endpoint</label>
+                              <input 
+                                type="text"
+                                value={ollamaEndpoint}
+                                onChange={(e) => {
+                                  setOllamaEndpoint(e.target.value);
+                                  localStorage.setItem('WIN_AGENT_OLLAMA_ENDPOINT', e.target.value);
+                                }}
+                                placeholder="http://localhost:11434"
+                                className="w-full bg-black/40 border border-hud-border rounded-lg px-4 py-3 text-sm focus:border-hud-cyan focus:shadow-[0_0_10px_rgba(0,240,255,0.3)] focus:outline-none font-mono text-hud-cyan transition-all"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] uppercase text-hud-dim font-bold mb-2 block tracking-widest font-mono">Ollama Model</label>
+                              <input 
+                                type="text"
+                                value={ollamaModel}
+                                onChange={(e) => {
+                                  setOllamaModel(e.target.value);
+                                  localStorage.setItem('WIN_AGENT_OLLAMA_MODEL', e.target.value);
+                                }}
+                                placeholder="qwen2.5-coder:7b"
+                                className="w-full bg-black/40 border border-hud-border rounded-lg px-4 py-3 text-sm focus:border-hud-cyan focus:shadow-[0_0_10px_rgba(0,240,255,0.3)] focus:outline-none font-mono text-hud-cyan transition-all"
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       <div className="pt-4 border-t border-hud-border/50">

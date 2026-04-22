@@ -7,11 +7,15 @@ export class LLMManager {
   private geminiClient: GoogleGenAI | null;
   private openaiClient: OpenAI | null;
   private anthropicClient: Anthropic | null;
+  private ollamaEndpoint: string;
+  private ollamaModel: string;
 
-  constructor(geminiKey: string, openaiKey: string, anthropicKey: string) {
+  constructor(geminiKey: string, openaiKey: string, anthropicKey: string, ollamaEndpoint: string, ollamaModel: string) {
     this.geminiClient = geminiKey ? new GoogleGenAI({ apiKey: geminiKey }) : null;
     this.openaiClient = openaiKey ? new OpenAI({ apiKey: openaiKey, dangerouslyAllowBrowser: true }) : null;
     this.anthropicClient = anthropicKey ? new Anthropic({ apiKey: anthropicKey, dangerouslyAllowBrowser: true }) : null;
+    this.ollamaEndpoint = ollamaEndpoint;
+    this.ollamaModel = ollamaModel;
   }
 
   async generateContent(
@@ -25,11 +29,11 @@ export class LLMManager {
     let responseText = "";
 
     if (provider === 'ollama') {
-      const response = await fetch('http://localhost:11434/api/generate', {
+      const response = await fetch(`${this.ollamaEndpoint}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'qwen2.5-coder:7b', // Принудительно используем локальную модель
+          model: this.ollamaModel,
           prompt: `${systemPrompt}\nContext: ${JSON.stringify(memory)}\nHistory: ${JSON.stringify(history.slice(-5))}\nUser: ${query}\nAssistant:`,
           stream: false
         })

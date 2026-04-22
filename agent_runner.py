@@ -21,6 +21,67 @@ try:
 except ImportError:
     pyautogui = None
 
+# --- LOW LEVEL KEYBOARD INJECTION (SendInput via User32) ---
+import ctypes
+from ctypes import wintypes
+import time
+
+user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+INPUT_KEYBOARD = 1
+KEYEVENTF_EXTENDEDKEY = 0x0001
+KEYEVENTF_KEYUP       = 0x0002
+KEYEVENTF_UNICODE     = 0x0004
+KEYEVENTF_SCANCODE    = 0x0008
+
+class KEYBDINPUT(ctypes.Structure):
+    _fields_ = (("wVk",         wintypes.WORD),
+                ("wScan",       wintypes.WORD),
+                ("dwFlags",     wintypes.DWORD),
+                ("time",        wintypes.DWORD),
+                ("dwExtraInfo", wintypes.ULONG))
+
+class INPUT(ctypes.Structure):
+    class _INPUT(ctypes.Union):
+        _fields_ = (("ki", KEYBDINPUT),
+                    ("mi", ctypes.c_int * 7), # Not using mouse yet
+                    ("hi", ctypes.c_int * 4)) # Not using hardware yet
+    _anonymous_ = ("_input",)
+    _fields_ = (("type",   wintypes.DWORD),
+                ("_input", _INPUT))
+
+# Virtual Key Codes Mapping (Simplified for common commands)
+VK_MAP = {
+    'enter': 0x0D, 'esc': 0x1B, 'tab': 0x09, 'space': 0x20, 'backspace': 0x08,
+    'up': 0x26, 'down': 0x28, 'left': 0x25, 'right': 0x27,
+    'win': 0x5B, 'ctrl': 0x11, 'alt': 0x12, 'shift': 0x10,
+    'a': 0x41, 'b': 0x42, 'c': 0x43, 'd': 0x44, 'e': 0x45, 'f': 0x46,
+    'g': 0x47, 'h': 0x48, 'i': 0x49, 'j': 0x4A, 'k': 0x4B, 'l': 0x4C,
+    'm': 0x4D, 'n': 0x4E, 'o': 0x4F, 'p': 0x50, 'q': 0x51, 'r': 0x52,
+    's': 0x53, 't': 0x54, 'u': 0x55, 'v': 0x56, 'w': 0x57, 'x': 0x58,
+    'y': 0x59, 'z': 0x5A, '0': 0x30, '1': 0x31, '2': 0x32, '3': 0x33,
+    '4': 0x34, '5': 0x35, '6': 0x36, '7': 0x37, '8': 0x38, '9': 0x39
+}
+
+def send_key_native(vk_code, is_press=True):
+    x = INPUT(type=INPUT_KEYBOARD,
+              ki=KEYBDINPUT(wVk=vk_code,
+                            wScan=0,
+                            dwFlags=0 if is_press else KEYEVENTF_KEYUP,
+                            time=0,
+                            dwExtraInfo=0))
+    user32.SendInput(1, ctypes.byref(x), ctypes.sizeof(x))
+
+def send_unicode_char(char):
+    # Sends actual text characters natively bypassing layout issues
+    surrogate_pair = char.encode('utf-16-le')
+    for code_point in map(lambda c: int.from_bytes(c, 'little'), [surrogate_pair[i:i+2] for i in range(0, len(surrogate_pair), 2)]):
+        down = INPUT(type=INPUT_KEYBOARD, ki=KEYBDINPUT(wVk=0, wScan=code_point, dwFlags=KEYEVENTF_UNICODE, time=0, dwExtraInfo=0))
+        up = INPUT(type=INPUT_KEYBOARD, ki=KEYBDINPUT(wVk=0, wScan=code_point, dwFlags=KEYEVENTF_UNICODE | KEYEVENTF_KEYUP, time=0, dwExtraInfo=0))
+        user32.SendInput(1, ctypes.byref(down), ctypes.sizeof(down))
+        user32.SendInput(1, ctypes.byref(up), ctypes.sizeof(up))
+# -------------------------------------------------------------
+
 app = Flask(__name__)
 CORS(app)
 
@@ -130,12 +191,18 @@ def execute():
     try:
         # --- Системные действия (через OS) ---
         if action == 'open_app':
-            os.system(f"start {params['name']}")
-            return jsonify({"status": "success"})
+            import ctypes
+            # ShellExecuteW: hwnd, operation, file, parameters, directory, showCmd (1 = SW_SHOWNORMAL)
+            result = ctypes.windll.shell32.ShellExecuteW(None, "open", params['name'], None, None, 1)
+            if result <= 32:
+                # Если ShellExecute не нашел программу, пробуем открыть чере cmd как fallback (для PWA и спец. алиасов)
+                os.system(f"start {params['name']}")
+            return jsonify({"status": "success", "msg": f"Opened {params['name']} natively."})
             
         elif action == 'open_url':
-            os.system(f"start {params['url']}")
-            return jsonify({"status": "success"})
+            import ctypes
+            ctypes.windll.shell32.ShellExecuteW(None, "open", params['url'], None, None, 1)
+            return jsonify({"status": "success", "msg": f"Opened URL natively."})
             
         elif action == 'run_command':
             cmd = params['cmd']
@@ -159,10 +226,22 @@ def execute():
             
         elif action == 'system_control':
             act = params['action']
-            if act == 'shutdown': os.system("shutdown /s /t 60")
-            elif act == 'restart': os.system("shutdown /r /t 60")
-            elif act == 'sleep': os.system("rundll32.exe powrprof.dll,SetSuspendState 0,1,0")
-            return jsonify({"status": "success"})
+            import ctypes
+            if act == 'shutdown': 
+                # ExitWindowsEx requires token privileges, using Advanced API is safer
+                os.system("shutdown /s /t 60")
+            elif act == 'restart': 
+                os.system("shutdown /r /t 60")
+            elif act == 'sleep': 
+                # Native call to PowrProf.dll for sleep state
+                ctypes.windll.PowrProf.SetSuspendState(0, 1, 0)
+            elif act == 'toggle_desktop':
+                # Minimize all windows locally using shell
+                shell = ctypes.windll.ole32.CoInitialize(None)
+                import win32com.client
+                shell = win32com.client.Dispatch("Shell.Application")
+                shell.ToggleDesktop()
+            return jsonify({"status": "success", "msg": f"Executed native {act}"})
 
         # --- Действия с файлами ---
         elif action == 'file_operation':
@@ -248,18 +327,29 @@ def execute():
 
         # --- Ввод (Клавиатура/Мышь) ---
         elif action == 'press_keys':
-            if not pyautogui: return jsonify({"status": "error", "msg": "PyAutoGUI not installed"}), 500
-            countdown_warning("Press Keys")
+            countdown_warning("Native Press Keys")
             keys = params.get('keys', '').lower().split('+')
-            pyautogui.hotkey(*keys)
-            return jsonify({"status": "success"})
+            # Нажимаем все клавиши (keydown)
+            for k in keys:
+                vk = VK_MAP.get(k)
+                if vk: 
+                    send_key_native(vk, is_press=True)
+                    time.sleep(0.05) # Небольшая задержка для игр
+            # Отпускаем в обратном порядке (keyup)
+            for k in reversed(keys):
+                vk = VK_MAP.get(k)
+                if vk: 
+                    send_key_native(vk, is_press=False)
+                    time.sleep(0.01)
+            return jsonify({"status": "success", "msg": "Executed low-level Native keypress"})
 
         elif action == 'type_text':
-            if not pyautogui: return jsonify({"status": "error", "msg": "PyAutoGUI not installed"}), 500
-            countdown_warning("Type Text")
+            countdown_warning("Native Type Text")
             text = params.get('text', '')
-            pyautogui.write(text, interval=0.01)
-            return jsonify({"status": "success"})
+            for char in text:
+                send_unicode_char(char)
+                time.sleep(0.005) # Эмуляция скорости печати человека
+            return jsonify({"status": "success", "msg": "Executed low-level Native Unicode typing"})
 
         return jsonify({"status": "error", "msg": "Unknown action"}), 400
         
